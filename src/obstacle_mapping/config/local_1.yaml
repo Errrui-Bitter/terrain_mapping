@@ -1,0 +1,24 @@
+mapping_mode: 1
+lidar_topic: "/velodyne_points"
+frame_id:
+  map: "map"
+  robot: "base_link"
+  odom: "odom"
+  lidar: "velodyne"
+
+preprocess:
+  minZ_: -3.0
+  maxZ_: 4.0
+
+local_map:
+  resolution: 0.2
+  mapLengthX: 40.0
+  mapLengthY: 60.0
+
+global_map:
+  resolution: 0.4
+  mapLengthX: 2000
+  mapLengthY: 2000
+
+
+heightdiff_threshold: 0.6

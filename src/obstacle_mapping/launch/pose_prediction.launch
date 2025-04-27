@@ -1,0 +1,15 @@
+<launch>
+  <param name="query_pos_x" value="0.0"/>
+  <param name="query_pos_y" value="16.0"/>
+  <param name="lidar_z_" value="0"/>
+
+
+  <node pkg="obstacle_mapping" type="key_pub_node" name="key_pub_node" output="screen"/>
+  
+  <node pkg="obstacle_mapping" type="pose_prediction_node" name="pose_prediction_node" output="screen">
+
+  </node>
+
+  <node pkg="rviz" type="rviz" name="test_rviz" args="-d $(find obstacle_mapping)/rviz/pose.rviz"/>
+
+</launch>
