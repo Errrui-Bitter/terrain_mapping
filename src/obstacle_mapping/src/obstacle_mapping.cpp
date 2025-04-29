@@ -24,20 +24,27 @@ void obstacle_mapping::init()
     init params
     ****************************/
     nh_.param<int>("mapping_mode", mapping_mode_, 1);
+    nh_.param<int>("threadCount", threadCount_, 1);
     nh_.param<string>("lidar_topic", lidar_topic_, "/velodyne_points");
     nh_.param<string>("frame_id/map", map_frame_, "map");
     nh_.param<string>("frame_id/robot", robot_frame_, "base_link");
     nh_.param<string>("frame_id/lidar", lidar_frame_, "velodyne");
     nh_.param<double>("local_map/resolution", local_map_resolution_, 0.2);
-    nh_.param<double>("global_map/resolution", global_map_resolution_, 0.2);
     nh_.param<double>("local_map/mapLengthX", local_map_length_x_, 40.0);
     nh_.param<double>("local_map/mapLengthY", local_map_length_y_, 60.0);
+    nh_.param<double>("global_map/resolution", global_map_resolution_, 0.2);
     nh_.param<double>("global_map/mapLengthX", global_map_length_x_, 1000.0);
     nh_.param<double>("global_map/mapLengthY", global_map_length_y_, 1000.0);
-    nh_.param<double>("minZ_", minZ_, -3.0);
-    nh_.param<double>("maxZ_", maxZ_, 4.0);
-    nh_.param<double>("maxZ_", lidar_z_, 0);
+    nh_.param<double>("global_map/submapLengthX", global_submap_length_x_, 100.0);
+    nh_.param<double>("global_map/submapLengthY", global_submap_length_y_, 100.0);
+    nh_.param<double>("global_map/sensorRangeLimit", sensorRangeLimit_, 80.0);
+    nh_.param<double>("global_map/predictionKernalSize", predictionKernalSize_, 1.0);
+    nh_.param<double>("minZ", minZ_, -3.0);
+    nh_.param<double>("maxZ", maxZ_, 4.0);
+    nh_.param<double>("lidar_Z", lidar_z_, 0);
     nh_.param<double>("heightdiff_threshold", heightdiffthreshold_, 0.6);
+    nh_.param<double>("cntratiothreshold", cntratiothreshold_, 0.5);
+    nh_.param<double>("normal_estimationRadius", normal_estimationRadius_, 0.5);
 
     /****************************
     init gridmap
@@ -55,7 +62,7 @@ void obstacle_mapping::init()
 
     local_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/localmap", 1);
     local_fused_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/localfusedmap", 1);
-    local_global_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/globalmap", 1);
+    global_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/globalmap", 1);
 }
 
 void obstacle_mapping::initgridmap(grid_map::GridMap &map, string frame, double height_map_resolution, double mapLength_x, double mapLength_y)
@@ -67,6 +74,10 @@ void obstacle_mapping::initgridmap(grid_map::GridMap &map, string frame, double 
     map.add("variance");
     map.add("min_elevation");
     map.add("max_elevation");
+    map.add("normal_z");
+    map.add("roughness");
+    map.add("step");
+    map.add("traversability");
     map.add("n_points", 0);
     map.add("obstacle", 0);
     map.add("obstacle_cnt", 0);
@@ -81,29 +92,26 @@ void obstacle_mapping::StoreOdom(const nav_msgs::OdometryConstPtr &odom)
 
 void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
 {
-    local_map_time_ = msg->header.stamp;
-    /****************************
-    点云前处理
-    ****************************/
+    map_time_ = msg->header.stamp;
     auto inputcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     pcl::fromROSMsg(*msg, *inputcloud);
-    auto localcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    localcloud->clear();
-    localcloud->reserve(inputcloud->size());
-    for (auto &point : inputcloud->points)
-    {
-        point.z += lidar_z_;
-        if (point.z >= minZ_ && point.z <= maxZ_)
-        {
-            localcloud->points.push_back(point);
-        }
-    }
-    ROS_INFO("Mapping %d points from lidar!", localcloud->size());
     /****************************
     单帧地图模式
     ****************************/
     if (mapping_mode_ == 1)
     {
+        ROS_INFO("Local Mapping...");
+        auto localcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        localcloud->clear();
+        localcloud->reserve(inputcloud->size());
+        for (auto &point : inputcloud->points)
+        {
+            point.z += lidar_z_;
+            if (point.z >= minZ_ && point.z <= maxZ_)
+            {
+                localcloud->points.push_back(point);
+            }
+        }
         LocalMapping(*localcloud);
         obstacledetection(local_map_);
         publocalmap();
@@ -122,6 +130,18 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
     ****************************/
     else if (mapping_mode_ == 2)
     {
+        ROS_INFO("Local Fusion Mapping...");
+        auto localcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        localcloud->clear();
+        localcloud->reserve(inputcloud->size());
+        for (auto &point : inputcloud->points)
+        {
+            point.z += lidar_z_;
+            if (point.z >= minZ_ && point.z <= maxZ_)
+            {
+                localcloud->points.push_back(point);
+            }
+        }
         LocalMapping(*localcloud);
         FuseMap();
         pubfusedlocalmap();
@@ -133,13 +153,11 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
     ****************************/
     else if (mapping_mode_ == 3)
     {
+        ROS_INFO("Global Mapping...");
         /****************************
         将点云坐标转到map（全局）坐标系
         ****************************/
         lidar_frame_ = msg->header.frame_id;
-        auto globalcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-        globalcloud->clear();
-        globalcloud->reserve(localcloud->size());
         tf::StampedTransform lidarmaptransform;
         try
         {
@@ -152,21 +170,62 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
         }
         Eigen::Affine3d lmtransformMatrix = Eigen::Affine3d::Identity();
         poseTFToEigen(lidarmaptransform, lmtransformMatrix);
+        robot_pose_ = lmtransformMatrix.translation();
+        ROS_INFO("robot position: %.2f, %.2f, %.2f", robot_pose_.x(), robot_pose_.y(), robot_pose_.z());
 
-        pcl::transformPointCloud(*localcloud, *globalcloud, lmtransformMatrix);
+        auto globalcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        globalcloud->clear();
+        globalcloud->reserve(inputcloud->size());
+        pcl::transformPointCloud(*inputcloud, *globalcloud, lmtransformMatrix);
+        auto globalcloudprocessed = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        globalcloudprocessed->clear();
+        globalcloudprocessed->reserve(globalcloud->size());
+        for (auto &point : globalcloud->points)
+        {
+            point.z += lidar_z_;
+            if (point.z >= minZ_ && point.z <= maxZ_)
+            {
+                globalcloudprocessed->points.push_back(point);
+            }
+        }
 
         /****************************
         全局建图
         ****************************/
-        robot_pose_ = lmtransformMatrix.translation();
         GlobalMapping(*globalcloud);
+        // 子图中心点
+        center_robot_ = robot_pose_.head<2>();
+        if (!global_map_.getIndex(center_robot_, center_robot_index_))
+        {
+            ROS_ERROR("robot is out of global map !");
+            return;
+        }
+        // 提取子图
+        bool submap_sucess;
+        grid_map::Length submap_length(global_submap_length_x_, global_submap_length_y_);
+        global_submap_ = global_map_.getSubmap(center_robot_, submap_length, submap_sucess);
+        if (!submap_sucess)
+        {
+            ROS_WARN("cound not get the global_submap!!!");
+            return;
+        }
+        double time1 = ros::Time::now().toSec();
+        DenseMapping(global_submap_);
+        double time2 = ros::Time::now().toSec();
+        NormalMapping(global_submap_);
+        double time3 = ros::Time::now().toSec();
 
+        // MergetoGlobalMap();
+
+        ROS_INFO("DenseMapping takes time : %f s", time2 - time1);
+        ROS_INFO("NormalMapping takes time : %f s", time3 - time2);
         pubglobalmap();
     }
     else
     {
         ROS_ERROR("Mapping mode %d is doesnot exist!!", mapping_mode_);
     }
+    return;
 }
 
 void obstacle_mapping::LocalMapping(const pcl::PointCloud<pcl::PointXYZ> &localcloud)
@@ -214,10 +273,10 @@ void obstacle_mapping::LocalMapping(const pcl::PointCloud<pcl::PointXYZ> &localc
 void obstacle_mapping::GlobalMapping(const pcl::PointCloud<pcl::PointXYZ> &globalcloud)
 {
     auto &heightMatrix = global_map_["elevation"];
-    auto &minHeightMatrix = global_map_["min_elevation"];
-    auto &varianceMatrix = local_map_["variance"];
-    auto &maxHeightMatrix = global_map_["max_elevation"];
     auto &npointsMatrix = global_map_["n_points"];
+    auto &varianceMatrix = global_map_["variance"];
+    auto &minHeightMatrix = global_map_["min_elevation"];
+    auto &maxHeightMatrix = global_map_["max_elevation"];
     grid_map::Index PointIndex;
     grid_map::Position PointPosition;
 
@@ -247,33 +306,36 @@ void obstacle_mapping::GlobalMapping(const pcl::PointCloud<pcl::PointXYZ> &globa
     }
 }
 
-void DenseMapping(grid_map::GridMap &map)
+void obstacle_mapping::DenseMapping(grid_map::GridMap &map)
 {
-    auto &heightMatrix = global_map_["elevation"];
-    auto &minHeightMatrix = global_map_["min_elevation"];
-    auto &varianceMatrix = global_map_["variance"];
-    auto &maxHeightMatrix = global_map_["max_elevation"];
-    auto &npointsMatrix = global_map_["n_points"];
+    int map_num_x = map.getSize().x();
+    int map_num_y = map.getSize().y();
+    double map_resolution = map.getResolution();
+    double map_length_x = map.getLength().x();
+    double map_length_y = map.getLength().y();
+    int densenum = 0;
 
-    int global_map_num_x = global_map_length_x_ / global_map_resolution_;
-    int global_map_num_y = global_map_length_y_ / global_map_resolution_;
+    auto &heightMatrix = map["elevation"];
+    auto &minHeightMatrix = map["min_elevation"];
+    auto &varianceMatrix = map["variance"];
+    auto &maxHeightMatrix = map["max_elevation"];
+    auto &npointsMatrix = map["n_points"];
+    grid_map::GridMap::Matrix heightMatrix_BGK = heightMatrix;
 
-    for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it)
+    for (grid_map::CircleIterator it(map, center_robot_, sensorRangeLimit_); !it.isPastEnd(); ++it)
     {
         grid_map::Index index = *it;
 
         // skip observed point
-        if (npointsMatrix[index(0)][index(1)] == 0)
+        if (npointsMatrix(index(0), index(1)) != 0)
         {
             continue;
         }
-        Eigen::Vector3d testpoint;
-        testpoint(0) = -(index(0) * global_map_resolution_ + global_map_resolution_ / 2.0 - global_map_length_x_);
-        testpoint(1) = -(index(1) * global_map_resolution_ + global_map_resolution_ / 2.0 - global_map_length_y_);
-        testpoint(2) = heightMatrix(index(0), index(1)); // this value is not used except for computing distance with robotPoint
-        // skip grids too far
-        double pointDistance = (testpoint - robot_pose_).norm();
-        if (pointDistance > sensorRangeLimit_)
+        Eigen::Vector2d testpoint;
+        bool inmap = map.getPosition(index, testpoint);
+        // skip grids too close
+        double pointDistance = (testpoint - robot_pose_.head<2>()).norm();
+        if (pointDistance < 1.0)
         {
             continue;
         }
@@ -281,63 +343,276 @@ void DenseMapping(grid_map::GridMap &map)
         vector<float> xTrainVec;     // training data x and y coordinates
         vector<float> yTrainVecElev; // training data elevation
         vector<float> yTrainVecOccu; // training data occupancy
-        grid_map::Position center(point(0), point(1));
-        for (grid_map::CircleIterator cit(global_map_, center, predictionKernalSize_); !cit.isPastEnd(); ++cit)
+        grid_map::Position center(testpoint(0), testpoint(1));
+        for (grid_map::CircleIterator cit(map, center, predictionKernalSize_); !cit.isPastEnd(); ++cit)
         {
             grid_map::Index cindex = *cit;
-
             // save only observed grid in this scan
-            if (npointsMatrix[cindex(0)][cindex(1)] == 0)
+            if (npointsMatrix(cindex(0), cindex(1)) == 0)
             {
                 continue;
             }
             Eigen::Vector3d trainpoint;
-            trainpoint(0) = -(cindex(0) * global_map_resolution_ + global_map_resolution_ / 2.0 - global_map_length_x_);
-            trainpoint(1) = -(cindex(1) * global_map_resolution_ + global_map_resolution_ / 2.0 - global_map_length_y_);
-            trainpoint(2) = heightMatrix(index(0), index(1));
-            xTrainVec.push_back(trainpoint(0));
-            xTrainVec.push_back(trainpoint(1));
-            yTrainVecElev.push_back(trainpoint(2));
-            // yTrainVecOccu.push_back(obstFlag[idx][idy] == true ? 1 : 0);
+            if (map.getPosition3("elevation", cindex, trainpoint))
+            {
+                xTrainVec.push_back(trainpoint(0));
+                xTrainVec.push_back(trainpoint(1));
+                yTrainVecElev.push_back(trainpoint(2));
+            }
         }
         // no training data available, continue
-        if (xTrainVec.size() == 0)
+        // if (xTrainVec.size() == 0)
+        if (xTrainVec.size() < 3)
             continue;
         // convert from vector to eigen
         Eigen::MatrixXf xTrain = Eigen::Map<const Eigen::Matrix<float, -1, -1, Eigen::RowMajor>>(xTrainVec.data(), xTrainVec.size() / 2, 2);
         Eigen::MatrixXf yTrainElev = Eigen::Map<const Eigen::Matrix<float, -1, -1, Eigen::RowMajor>>(yTrainVecElev.data(), yTrainVecElev.size(), 1);
-        Eigen::MatrixXf yTrainOccu = Eigen::Map<const Eigen::Matrix<float, -1, -1, Eigen::RowMajor>>(yTrainVecOccu.data(), yTrainVecOccu.size(), 1);
         // Test data (current grid)
         vector<float> xTestVec;
-        xTestVec.push_back(testPoint(0));
-        xTestVec.push_back(testPoint(1));
+        xTestVec.push_back(testpoint(0));
+        xTestVec.push_back(testpoint(1));
         Eigen::MatrixXf xTest = Eigen::Map<const Eigen::Matrix<float, -1, -1, Eigen::RowMajor>>(xTestVec.data(), xTestVec.size() / 2, 2);
         // Predict
         Eigen::MatrixXf Ks;           // covariance matrix
         covSparse(xTest, xTrain, Ks); // sparse kernel
 
         Eigen::MatrixXf ybarElev = (Ks * yTrainElev).array();
-        Eigen::MatrixXf ybarOccu = (Ks * yTrainOccu).array();
         Eigen::MatrixXf kbar = Ks.rowwise().sum().array();
 
         // Update Elevation with Prediction
-        if (std::isnan(ybarElev(0, 0)) || std::isnan(ybarOccu(0, 0)) || std::isnan(kbar(0, 0)))
+        if (std::isnan(ybarElev(0, 0)) || std::isnan(kbar(0, 0)))
             continue;
 
         if (kbar(0, 0) == 0)
             continue;
 
         float elevation = ybarElev(0, 0) / kbar(0, 0);
-        float occupancy = ybarOccu(0, 0) / kbar(0, 0);
+        npointsMatrix(index(0), index(1)) += 1;
+        heightMatrix_BGK(index(0), index(1)) = elevation;
+        // debug
+        densenum++;
     }
+    map.add("elevation_BGK", heightMatrix_BGK);
+    if (densenum)
+        ROS_INFO("Dense map grids : %d", densenum);
 }
 
-void GradientMapping(grid_map::GridMap &map)
+void StepMapping(grid_map::GridMap &map)
 {
 }
 
-void NormalMapping(grid_map::GridMap &map)
+// __global__ void computeNormalsKernel(const float *elevationData, const int width, const int height,
+//                                      const double estimationRadius, float *normalData, int *validCounts)
+// {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= width * height)
+//         return;
+
+//     int x = idx / height;
+//     int y = idx % height;
+
+//     // Check if the cell is valid
+//     if (elevationData[idx] == -1.0f)
+//         return; // Assuming -1.0f indicates invalid
+
+//     // Initialize variables for normal calculation
+//     int nPoints = 0;
+//     Eigen::Vector3d sum = Eigen::Vector3d::Zero();
+//     Eigen::Matrix3d sumSquared = Eigen::Matrix3d::Zero();
+
+//     // Gather surrounding data within the estimation radius
+//     for (int dx = -estimationRadius; dx <= estimationRadius; ++dx)
+//     {
+//         for (int dy = -estimationRadius; dy <= estimationRadius; ++dy)
+//         {
+//             int neighborX = x + dx;
+//             int neighborY = y + dy;
+
+//             if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height)
+//             {
+//                 float neighborElevation = elevationData[neighborX * height + neighborY];
+//                 if (neighborElevation != -1.0f)
+//                 {
+//                     nPoints++;
+//                     Eigen::Vector3d point(neighborX, neighborY, neighborElevation);
+//                     sum += point;
+//                     sumSquared.noalias() += point * point.transpose();
+//                 }
+//             }
+//         }
+//     }
+
+//     // Compute normal vector
+//     if (nPoints >= 3)
+//     {
+//         Eigen::Vector3d mean = sum / nPoints;
+//         Eigen::Matrix3d covarianceMatrix = sumSquared / nPoints - mean * mean.transpose();
+//         Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(covarianceMatrix);
+//         if (solver.eigenvalues()(1) > 1e-8)
+//         {
+//             Eigen::Vector3d normalVector = solver.eigenvectors().col(0);
+//             if (normalVector.dot(Vector3::UnitZ()) < 0.0)
+//             {
+//                 normalVector = -normalVector;
+//             }
+//             normalData[idx] = normalVector.z();
+//         }
+//     }
+//     validCounts[idx] = nPoints;
+// }
+
+// void obstacle_mapping::NormalMapping_CUDA(grid_map::GridMap &map)
+// {
+//     const double start = ros::Time::now().toSec();
+//     grid_map::Size gridMapSize = map.getSize();
+//     double map_res = map.getResolution();
+//     auto &heightMatrix = map["elevation"];
+//     auto &normalzMatrix = map["normal_z"];
+
+//     // Prepare CUDA data
+//     float *d_elevationData;
+//     float *d_normalData;
+//     int *d_validCounts;
+//     size_t gridSize = gridMapSize(0) * gridMapSize(1);
+
+//     // Allocate memory on the device
+//     cudaMalloc(&d_elevationData, gridSize * sizeof(float));
+//     cudaMalloc(&d_normalData, gridSize * sizeof(float)); // for normal vectors
+//     cudaMalloc(&d_validCounts, gridSize * sizeof(int));
+
+//     // Copy elevation data to device
+//     float *elevationData = new float[gridSize];
+//     for (int i = 0; i < gridMapSize(0); ++i)
+//     {
+//         for (int j = 0; j < gridMapSize(1); ++j)
+//         {
+//             elevationData[i * gridMapSize(1) + j] = map.at("elevation", grid_map::Index(i, j));
+//         }
+//     }
+//     cudaMemcpy(d_elevationData, elevationData, gridSize * sizeof(float), cudaMemcpyHostToDevice);
+
+//     // Launch CUDA kernel
+//     int threadsPerBlock = 256;
+//     int blocks = (gridSize + threadsPerBlock - 1) / threadsPerBlock;
+//     computeNormalsKernel<<<blocks, threadsPerBlock>>>(d_elevationData, gridMapSize(0), gridMapSize(1),
+//                                                       ceil(normal_estimationRadius_ / map_res), d_normalData, d_validCounts);
+
+//     // Copy results back to host
+//     Eigen::Vector3d *normalResults = new Eigen::Vector3d[gridSize];
+//     cudaMemcpy(normalResults, d_normalData, gridSize * sizeof(float), cudaMemcpyDeviceToHost);
+
+//     // Store results in the map
+//     for (int i = 0; i < gridMapSize(0); ++i)
+//     {
+//         for (int j = 0; j < gridMapSize(1); ++j)
+//         {
+//             normalzMatrix(i, j) = normalResults[i * gridMapSize(1) + j];
+//         }
+//     }
+
+//     // Free device memory
+//     cudaFree(d_elevationData);
+//     cudaFree(d_normalData);
+//     cudaFree(d_validCounts);
+//     delete[] elevationData;
+//     delete[] normalResults;
+
+//     const double end = ros::Time::now().toSec();
+//     ROS_DEBUG_THROTTLE(2.0, "NORMAL COMPUTATION TIME = %f", (end - start));
+// }
+
+void obstacle_mapping::NormalMapping(grid_map::GridMap &map)
 {
+    const double start = ros::Time::now().toSec();
+    grid_map::Size gridMapSize = map.getSize();
+    int robot_range = center_robot_index_(0) * gridMapSize(1) + center_robot_index_(1);
+    // Set number of thread to use for parallel programming.
+    std::unique_ptr<tbb::task_scheduler_init> TBBInitPtr;
+    if (threadCount_ != -1)
+    {
+        TBBInitPtr.reset(new tbb::task_scheduler_init(threadCount_));
+    }
+    // Parallelized iteration through the map.
+    tbb::parallel_for(0, gridMapSize(0) * gridMapSize(1), [&](int range)
+                      {
+    // Recover Cell index from range iterator.
+    const grid_map::Index index(range / gridMapSize(1), range % gridMapSize(1));
+    // grid_map::Position pos;
+    // map.getPosition(index, pos);
+    // bool insubmap = global_submap_.isInside(pos);
+    bool insubmap = fabs(robot_range - range) < global_submap_length_y_ / global_map_resolution_ * global_submap_length_x_ / global_map_resolution_ / 2;
+    if (map.isValid(index, "elevation") && insubmap) 
+    {
+        areaSingleNormalComputation(map, index);
+    } });
+
+    const double end = ros::Time::now().toSec();
+    ROS_DEBUG_THROTTLE(2.0, "NORMAL COMPUTATION TIME = %f", (end - start));
+}
+
+void obstacle_mapping::areaSingleNormalComputation(grid_map::GridMap &map, const grid_map::Index &index)
+{
+    // Requested position (center) of circle in map.
+    grid_map::Position center;
+    map.getPosition(index, center);
+
+    // Prepare data computation. Check if area is bigger than cell.
+    const double minAllowedEstimationRadius = 0.5 * map.getResolution();
+    if (normal_estimationRadius_ <= minAllowedEstimationRadius)
+    {
+        ROS_WARN("Estimation radius is smaller than allowed by the map resolution (%f < %f)", normal_estimationRadius_, minAllowedEstimationRadius);
+    }
+
+    // Gather surrounding data.
+    size_t nPoints = 0;
+    grid_map::Position3 sum = grid_map::Position3::Zero();
+    Eigen::Matrix3d sumSquared = Eigen::Matrix3d::Zero();
+    for (grid_map::CircleIterator circleIterator(map, center, normal_estimationRadius_); !circleIterator.isPastEnd(); ++circleIterator)
+    {
+        grid_map::Position3 point;
+        if (!map.getPosition3("elevation", *circleIterator, point))
+        {
+            continue;
+        }
+        nPoints++;
+        sum += point;
+        sumSquared.noalias() += point * point.transpose();
+    }
+
+    Eigen::Vector3d unitaryNormalVector = Eigen::Vector3d::Zero();
+    if (nPoints < 3)
+    {
+        ROS_DEBUG("Not enough points to establish normal direction (nPoints = %i)", static_cast<int>(nPoints));
+        unitaryNormalVector = Eigen::Vector3d::UnitZ();
+    }
+    else
+    {
+        const grid_map::Position3 mean = sum / nPoints;
+        const Eigen::Matrix3d covarianceMatrix = sumSquared / nPoints - mean * mean.transpose();
+
+        // Compute Eigenvectors.
+        // Eigenvalues are ordered small to large.
+        // Worst case bound for zero eigenvalue from : https://eigen.tuxfamily.org/dox/classEigen_1_1SelfAdjointEigenSolver.html
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver;
+        solver.computeDirect(covarianceMatrix, Eigen::DecompositionOptions::ComputeEigenvectors);
+        if (solver.eigenvalues()(1) > 1e-8)
+        {
+            unitaryNormalVector = solver.eigenvectors().col(0);
+        }
+        else
+        { // If second eigenvalue is zero, the normal is not defined.
+            ROS_DEBUG("Covariance matrix needed for eigen decomposition is degenerated.");
+            ROS_DEBUG("Expected cause: data is on a straight line (nPoints = %i)", static_cast<int>(nPoints));
+            unitaryNormalVector = Eigen::Vector3d::UnitZ();
+        }
+    }
+
+    // Check direction of the normal vector and flip the sign towards the user defined direction.
+    if (unitaryNormalVector.dot(Eigen::Vector3d::UnitZ()) < 0.0)
+    {
+        unitaryNormalVector = -unitaryNormalVector;
+    }
+    map.at("normal_z", index) = unitaryNormalVector.z();
 }
 
 void obstacle_mapping::obstacledetection(grid_map::GridMap &map)
@@ -410,7 +685,7 @@ void obstacle_mapping::obstacledetection(const pcl::PointCloud<pcl::PointXYZ> &l
 }
 void obstacle_mapping::FuseMap()
 {
-    int matchodom_index = TimestampMatch(local_map_time_.toSec(), odom_deque_);
+    int matchodom_index = TimestampMatch(map_time_.toSec(), odom_deque_);
     cur_odom_ = odom_deque_[matchodom_index];
     if (first_map_init_)
     {
@@ -546,7 +821,7 @@ void obstacle_mapping::updateHeightStats(float &height, float &variance, float n
     }
 }
 
-void dist(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &d) const
+void obstacle_mapping::dist(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &d) const
 {
     d = Eigen::MatrixXf::Zero(xStar.rows(), xTrain.rows());
     for (int i = 0; i < xStar.rows(); ++i)
@@ -555,11 +830,13 @@ void dist(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::Ma
     }
 }
 
-void covSparse(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &Kxz) const
+void obstacle_mapping::covSparse(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &Kxz) const
 {
     dist(xStar / (predictionKernalSize_ + 0.1), xTrain / (predictionKernalSize_ + 0.1), Kxz);
     Kxz = (((2.0f + (Kxz * 2.0f * 3.1415926f).array().cos()) * (1.0f - Kxz.array()) / 3.0f) +
-           (Kxz * 2.0f * 3.1415926f).array().sin() / (2.0f * 3.1415926f)).matrix() * 1.0f;
+           (Kxz * 2.0f * 3.1415926f).array().sin() / (2.0f * 3.1415926f))
+              .matrix() *
+          1.0f;
     // Clean up for values with distance outside length scale, possible because Kxz <= 0 when dist >= predictionKernalSize
     for (int i = 0; i < Kxz.rows(); ++i)
         for (int j = 0; j < Kxz.cols(); ++j)
@@ -570,7 +847,7 @@ void covSparse(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eige
 void obstacle_mapping::publocalmap()
 {
     grid_map_msgs::GridMap msg;
-    msg.info.header.stamp = local_map_time_;
+    msg.info.header.stamp = map_time_;
     grid_map::GridMapRosConverter::toMessage(local_map_, msg);
     local_map_pub_.publish(msg);
 }
@@ -578,22 +855,15 @@ void obstacle_mapping::publocalmap()
 void obstacle_mapping::pubfusedlocalmap()
 {
     grid_map_msgs::GridMap msg;
-    msg.info.header.stamp = local_map_time_;
+    msg.info.header.stamp = map_time_;
     grid_map::GridMapRosConverter::toMessage(fused_local_map_, msg);
     local_fused_map_pub_.publish(msg);
 }
 
 void obstacle_mapping::pubglobalmap()
 {
-    // 子图中心点
-    grid_map::Position center(0, 0);
-    // 提取子图
-    bool submap_sucess;
-    grid_map::Length submap_length(submap_length_x_, submap_length_y_);
-    grid_map::GridMap sub_map = global_map_.getSubmap(center, submap_length, submap_sucess);
-
     grid_map_msgs::GridMap msg;
-    msg.info.header.stamp = local_map_time_;
-    grid_map::GridMapRosConverter::toMessage(sub_map, msg);
-    local_global_map_pub_.publish(msg);
+    msg.info.header.stamp = map_time_;
+    grid_map::GridMapRosConverter::toMessage(global_submap_, msg);
+    global_map_pub_.publish(msg);
 }

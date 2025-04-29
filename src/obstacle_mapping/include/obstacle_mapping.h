@@ -6,6 +6,9 @@
  **/
 #include <iostream>
 #include <deque>
+#include <tbb/task_scheduler_init.h>
+#include <tbb/tbb.h>
+// #include <cuda_runtime.h>
 
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -38,14 +41,17 @@ private:
     ros::Subscriber odom_sub_;
     ros::Publisher local_map_pub_;
     ros::Publisher local_fused_map_pub_;
-    ros::Publisher local_global_map_pub_;
+    ros::Publisher global_map_pub_;
     ros::Publisher local_obstacle_map_pub_;
     tf::TransformListener listener_;
-    ros::Time local_map_time_;
+    ros::Time map_time_;
 
     grid_map::GridMap local_map_;
     grid_map::GridMap fused_local_map_;
     grid_map::GridMap global_map_;
+    grid_map::GridMap global_submap_;
+    grid_map::Position center_robot_; // 机器人在全局地图中的位置
+    grid_map::Index center_robot_index_;
 
     std::deque<nav_msgs::Odometry> odom_deque_;
     nav_msgs::Odometry cur_odom_;
@@ -58,26 +64,26 @@ private:
 
     double minZ_;
     double maxZ_;
+    double lidar_z_;
     double local_map_resolution_;
     double global_map_resolution_;
     double global_map_length_x_;
     double global_map_length_y_;
     double local_map_length_x_;
     double local_map_length_y_;
-    double submap_length_x_;
-    double submap_length_y_;
-    double alpha_;
+    double global_submap_length_x_;
+    double global_submap_length_y_;
     double heightdiffthreshold_;
     double cntratiothreshold_;
-    double lidar_z_;
-    const double sensorRangeLimit_ = 60;
-    const double predictionKernalSize_ = 2.0;
+    double sensorRangeLimit_;
+    double predictionKernalSize_;
+    double normal_estimationRadius_;
 
     int cntthreshold_;
     int mapping_mode_;
+    int threadCount_;
 
     bool first_map_init_ = true;
-    bool use_EMA_;
 
     Eigen::Vector3d robot_pose_;
 
@@ -93,12 +99,19 @@ private:
     void GlobalMapping(const pcl::PointCloud<pcl::PointXYZ> &globalcloud);
 
     void DenseMapping(grid_map::GridMap &map);
-    void GradientMapping(grid_map::GridMap &map);
+    void StepMapping(grid_map::GridMap &map);
     void NormalMapping(grid_map::GridMap &map);
+    // void NormalMapping_CUDA(grid_map::GridMap &map);
     void obstacledetection(grid_map::GridMap &map);
     void obstacledetection(const pcl::PointCloud<pcl::PointXYZ> &localcloud, grid_map::GridMap &map);
 
     void updateHeightStats(float &height, float &variance, float n, float new_height);
+    void areaSingleNormalComputation(grid_map::GridMap &map, const grid_map::Index &index);
+    // __global__ void computeNormalsKernel(const float *elevationData, const int width, const int height,
+    //                                      const double estimationRadius, float *normalData, int *validCounts);
+
+    void dist(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &d) const;
+    void covSparse(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &Kxz) const;
 
     int TimestampMatch(double fixtimestamp, std::deque<nav_msgs::Odometry> target_deque);
     double BayesUpdator(double value_update, double value_observe);

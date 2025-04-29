@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(obstacle_mapping)
-
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
 set(CMAKE_BUILD_TYPE Debug)
@@ -23,12 +22,27 @@ find_package(PCL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 REQUIRED)
 
+pkg_check_modules(TBB "tbb")
+if (TBB_FOUND)
+  add_definitions(
+    ${TBB_CFLAGS}
+    ${TBB_CFLAGS_OTHER}
+  )
+else()
+  message([FATAL_ERROR] "tbb module not found")
+endif ()
 
 catkin_package(
- INCLUDE_DIRS include
- LIBRARIES obstacle_mapping
- CATKIN_DEPENDS roscpp sensor_msgs std_msgs
- DEPENDS system_lib
+  INCLUDE_DIRS 
+    include
+    ${TBB_INCLUDE_DIRS}
+  LIBRARIES obstacle_mapping_lib
+  CATKIN_DEPENDS 
+    roscpp 
+    sensor_msgs 
+    std_msgs
+  DEPENDS 
+    system_lib
 )
 
 
@@ -37,13 +51,14 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
+  ${TBB_INCLUDE_DIRS}
 )
 
 # Declare a C++ library
 add_library(obstacle_mapping_lib
   src/obstacle_mapping.cpp
 )
-target_link_libraries(obstacle_mapping_lib ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+target_link_libraries(obstacle_mapping_lib ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${TBB_LIBRARIES})
 
 add_executable(obstacle_mapping_node src/obstacle_mapping_node.cpp)
 add_dependencies(obstacle_mapping_node obstacle_mapping_lib)

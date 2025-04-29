@@ -1,4 +1,4 @@
-mapping_mode: 1
+mapping_mode: 3
 lidar_topic: "/velodyne_points"
 frame_id:
   map: "map"
@@ -16,9 +16,18 @@ local_map:
   mapLengthY: 60.0
 
 global_map:
-  resolution: 0.4
+  resolution: 0.2
   mapLengthX: 2000
   mapLengthY: 2000
+  submapLengthX: 60
+  submapLengthY: 80
+  sensorRangeLimit: 40
+  predictionKernalSize: 0.3
 
-
+minZ: -3.0
+maxZ: 3.0
+lidar_Z: 0
 heightdiff_threshold: 0.6
+cntratiothreshold: 0.5
+threadCount: 4
+normal_estimationRadius: 2.0

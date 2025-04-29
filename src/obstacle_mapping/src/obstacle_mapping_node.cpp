@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
     ros配置
     ****************************/
     ros::init(argc, argv, "obstacle_detection_node");
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
 
     obstacle_mapping om(nh);
 
