@@ -57,17 +57,17 @@ Visualization Manager:
       Autocompute Intensity Bounds: false
       Class: grid_map_rviz_plugin/GridMap
       Color: 200; 200; 200
-      Color Layer: elevation
+      Color Layer: slope
       Color Transformer: IntensityLayer
       Enabled: true
-      Height Layer: elevation
+      Height Layer: elevation_BGK
       Height Transformer: ""
       History Length: 1
       Invert Rainbow: false
       Max Color: 239; 41; 41
-      Max Intensity: 2.5
+      Max Intensity: 1
       Min Color: 255; 255; 255
-      Min Intensity: -1.5
+      Min Intensity: 0
       Name: GridMap
       Show Grid Lines: true
       Topic: /globalmap
@@ -130,7 +130,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 74.13646697998047
+      Distance: 91.17446899414062
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -138,17 +138,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 4
-        Y: 4
-        Z: -0.032012939453125
+        X: 2.6998212337493896
+        Y: 4.56165885925293
+        Z: -0.028106689453125
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5847968459129333
+      Pitch: 1.414796233177185
       Target Frame: <Fixed Frame>
-      Yaw: 5.108184337615967
+      Yaw: 4.743157863616943
     Saved: ~
 Window Geometry:
   Displays:

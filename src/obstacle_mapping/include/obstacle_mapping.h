@@ -65,6 +65,7 @@ private:
     double minZ_;
     double maxZ_;
     double lidar_z_;
+
     double local_map_resolution_;
     double global_map_resolution_;
     double global_map_length_x_;
@@ -73,17 +74,24 @@ private:
     double local_map_length_y_;
     double global_submap_length_x_;
     double global_submap_length_y_;
-    double heightdiffthreshold_;
-    double cntratiothreshold_;
+
     double sensorRangeLimit_;
     double predictionKernalSize_;
     double normal_estimationRadius_;
+    double stepRadius_;
+
+    double heightdiffthreshold_;
+    double cntratiothreshold_;
+    double slope_crit_;
+    double roughness_crit_;
+    double step_crit_;
 
     int cntthreshold_;
     int mapping_mode_;
     int threadCount_;
 
     bool first_map_init_ = true;
+    // bool debug_ = false;
 
     Eigen::Vector3d robot_pose_;
 
@@ -99,16 +107,16 @@ private:
     void GlobalMapping(const pcl::PointCloud<pcl::PointXYZ> &globalcloud);
 
     void DenseMapping(grid_map::GridMap &map);
-    void StepMapping(grid_map::GridMap &map);
-    void NormalMapping(grid_map::GridMap &map);
-    // void NormalMapping_CUDA(grid_map::GridMap &map);
+    void FeatureMapping(grid_map::GridMap &map);
+    void StepMapping(grid_map::GridMap &map, const grid_map::Index &index);
+    void TraversabilityMapping(grid_map::GridMap &map);
+    void FeatureMerge();
+
     void obstacledetection(grid_map::GridMap &map);
     void obstacledetection(const pcl::PointCloud<pcl::PointXYZ> &localcloud, grid_map::GridMap &map);
 
     void updateHeightStats(float &height, float &variance, float n, float new_height);
     void areaSingleNormalComputation(grid_map::GridMap &map, const grid_map::Index &index);
-    // __global__ void computeNormalsKernel(const float *elevationData, const int width, const int height,
-    //                                      const double estimationRadius, float *normalData, int *validCounts);
 
     void dist(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &d) const;
     void covSparse(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &Kxz) const;

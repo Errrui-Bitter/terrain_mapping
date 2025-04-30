@@ -9,6 +9,7 @@ frame_id:
 preprocess:
   minZ_: -3.0
   maxZ_: 4.0
+  lidar_Z: 0
 
 local_map:
   resolution: 0.2
@@ -21,13 +22,20 @@ global_map:
   mapLengthY: 2000
   submapLengthX: 60
   submapLengthY: 80
-  sensorRangeLimit: 40
-  predictionKernalSize: 0.3
+  predictionKernalSize: 0.6
 
 minZ: -3.0
 maxZ: 3.0
-lidar_Z: 0
+
+
+threadCount: -1
+normal_estimationRadius: 1.0
+stepRadius: 0.3
+
+sensorRangeLimit: 40
+
 heightdiff_threshold: 0.6
 cntratiothreshold: 0.5
-threadCount: 4
-normal_estimationRadius: 2.0
+slope_crit: 0.2
+roughness_crit: 0.5
+step_crit_: 0.8

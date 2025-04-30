@@ -1,5 +1,5 @@
 <launch>
-
+  <param name="use_sim_time" value="true" />
   <arg name="workspace" default="$(env CMAKE_PREFIX_PATH)" />
 
   <node pkg="obstacle_mapping" type="obstacle_mapping_node" name="obstacle_mapping_node" output="screen">
