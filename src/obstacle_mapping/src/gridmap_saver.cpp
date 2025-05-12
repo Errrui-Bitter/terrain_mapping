@@ -33,7 +33,7 @@ void saveGridMap(const std_msgs::Bool::ConstPtr &msg)
             return;
         }
 
-        const std::string layer_name = "elevation_inpainted"; // 需要保存的层
+        const std::string layer_name = "elevation_BGK"; // 需要保存的层
         if (current_grid_map.exists(layer_name))
         {
             const auto &height_data = current_grid_map[layer_name];

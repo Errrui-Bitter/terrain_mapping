@@ -786,9 +786,10 @@ void pose_prediction::pubishmap(const ros::TimerEvent &event)
 
     grid_map::GridMap robot_gridmap;
     grid_map::Length mapLength(3.2, 5.4);
-    robot_gridmap.setFrameId("map");
+    robot_gridmap.setFrameId("base_link");
     robot_gridmap.setGeometry(mapLength, 0.2, grid_map::Position(pos_.x(), pos_.y()));
-    robot_gridmap.add("elevation", robot_gap_map_.Z_.cast<float>());
+    robot_gridmap.add("elevation", robot_gridmap_.Z_.cast<float>());
+    // robot_gridmap.add("elevation", robot_gap_map_.Z_.cast<float>());
     robot_gridmap_msg.info.header.stamp = ros::Time::now();
     grid_map::GridMapRosConverter::toMessage(robot_gridmap, grid_map_msg_sub);
     robot_gap_map_pub_.publish(grid_map_msg_sub);

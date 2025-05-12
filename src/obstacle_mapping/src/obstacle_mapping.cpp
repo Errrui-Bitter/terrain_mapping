@@ -49,12 +49,13 @@ void obstacle_mapping::init()
     nh_.param<double>("slope_crit", slope_crit_, 0.2);
     nh_.param<double>("roughness_crit", roughness_crit_, 0.5);
     nh_.param<double>("step_crit", step_crit_, 0.8);
+    nh_.param<double>("traversability_crit", traversability_crit_, 0.8);
 
     /****************************
     init gridmap
     ****************************/
 
-    initgridmap(local_map_, robot_frame_, local_map_resolution_, local_map_length_x_, local_map_length_y_);
+    initgridmap(local_map_, map_frame_, local_map_resolution_, local_map_length_x_, local_map_length_y_);
     initgridmap(fused_local_map_, robot_frame_, local_map_resolution_, local_map_length_x_, local_map_length_y_);
     initgridmap(global_map_, map_frame_, global_map_resolution_, global_map_length_x_, global_map_length_y_);
 
@@ -111,6 +112,9 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
     if (mapping_mode_ == 1)
     {
         ROS_INFO("Local Mapping...");
+
+        robot_pose_ = Eigen::Vector3d::Zero();
+
         auto localcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
         localcloud->clear();
         localcloud->reserve(inputcloud->size());
@@ -123,11 +127,21 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
             }
         }
         LocalMapping(*localcloud);
-        obstacledetection(local_map_);
+        double time1 = ros::Time::now().toSec();
+        DenseMapping(local_map_);
+        double time2 = ros::Time::now().toSec();
+        FeatureMapping(local_map_);
+        double time3 = ros::Time::now().toSec();
+        TraversabilityMapping(local_map_);
+
+        ROS_INFO("DenseMapping takes time : %f s", time2 - time1);
+        ROS_INFO("FeatureMapping takes time : %f s", time3 - time2);
+        mapobstacledetection(local_map_);
         publocalmap();
         local_map_.clearAll();
-        int rows = local_map_length_x_ / local_map_resolution_;
-        int cols = local_map_length_y_ / local_map_resolution_;
+        grid_map::Size local_map_size = local_map_.getSize();
+        int rows = local_map_size.x();
+        int cols = local_map_size.y();
         Eigen::MatrixXf zeroMatrix = Eigen::MatrixXf::Zero(rows, cols);
         local_map_.add("n_points", zeroMatrix);
         local_map_.add("obstacle", zeroMatrix);
@@ -169,7 +183,7 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
         将点云坐标转到map（全局）坐标系
         ****************************/
         lidar_frame_ = msg->header.frame_id;
-        
+
         tf::StampedTransform lidarmaptransform;
         try
         {
@@ -227,6 +241,7 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
         FeatureMapping(global_submap_);
         double time3 = ros::Time::now().toSec();
         TraversabilityMapping(global_submap_);
+        mapobstacledetection(global_submap_);
 
         FeatureMerge();
 
@@ -319,7 +334,6 @@ void obstacle_mapping::GlobalMapping(const pcl::PointCloud<pcl::PointXYZ> &globa
 }
 void obstacle_mapping::DenseMapping(grid_map::GridMap &map)
 {
-    // int densenum = 0;
     auto &heightMatrix = map["elevation"];
     auto &npointsMatrix = map["n_points"];
     grid_map::GridMap::Matrix heightMatrix_BGK = heightMatrix;
@@ -340,7 +354,7 @@ void obstacle_mapping::DenseMapping(grid_map::GridMap &map)
         }
         // skip grids too close
         double pointDistance = (testpoint - robot_pose_.head<2>()).norm();
-        if (pointDistance < 1.0 || pointDistance > sensorRangeLimit_)
+        if (pointDistance < 3.0 || pointDistance > sensorRangeLimit_)
         {
             continue;
         }
@@ -393,37 +407,34 @@ void obstacle_mapping::DenseMapping(grid_map::GridMap &map)
 
         float elevation = ybarElev(0, 0) / kbar(0, 0);
         heightMatrix_BGK(index(0), index(1)) = elevation;
-        // debug
-        // densenum++;
     }
     map.add("elevation_BGK", heightMatrix_BGK);
-    // if (densenum)
-    //     ROS_INFO("Dense map grids : %d", densenum);
 }
 
-void obstacle_mapping::StepMapping(grid_map::GridMap &map, const grid_map::Index &index)
+void obstacle_mapping::StepMapping(grid_map::GridMap &map, const grid_map::Index &index, const Eigen::Vector3d &f_point)
 {
-    grid_map::Position center;
-    if (!map.getPosition(index, center))
-    {
-        ROS_ERROR("In file %s at line %d : The index is not in the map !", __FILE__, __LINE__);
-        return;
-    }
-    auto &heightMatrix = map["elevation_BGK"];
+    grid_map::Position center = f_point.head<2>();
+    double center_h = f_point.z();
     auto &stepMatrix = map["step"];
     // auto &minHeightMatrix = map["min_elevation"];
     // auto &maxHeightMatrix = map["max_elevation"];
-    auto &npointsMatrix = map["n_points"];
+    // auto &npointsMatrix = map["n_points"];
     double max_step = -1.0;
-    for (grid_map::SpiralIterator it(map, center, stepRadius_); !it.isPastEnd(); ++it)
+    for (grid_map::CircleIterator it(map, center, stepRadius_); !it.isPastEnd(); ++it)
+    // for (grid_map::SpiralIterator it(map, center, ); !it.isPastEnd(); ++it)
     {
         grid_map::Index neighbor_idx = *it;
-        if (npointsMatrix(neighbor_idx(0), neighbor_idx(1)) == 0)
+        Eigen::Vector3d point;
+        if (map.getPosition3("elevation_BGK", neighbor_idx, point))
         {
-            continue;
+            double step = std::abs(center_h - point.z());
+            max_step = std::max(step, max_step);
         }
-        double step = std::abs(heightMatrix(index(0), index(1)) - heightMatrix(neighbor_idx(0), neighbor_idx(1)));
-        max_step = std::max(step, max_step);
+        // grid_map::Index neighbor_idx = *it;
+        // if (npointsMatrix(neighbor_idx(0), neighbor_idx(1)) == 0)
+        // {
+        //     continue;
+        // }
     }
     if (max_step >= 0)
     {
@@ -446,9 +457,11 @@ void obstacle_mapping::FeatureMapping(grid_map::GridMap &map)
                       {
     // Recover Cell index from range iterator.
     const grid_map::Index index(range / gridMapSize(1), range % gridMapSize(1));
-    if (map.isValid(index, "elevation_BGK")) 
+
+    Eigen::Vector3d f_point = Eigen::Vector3d::Zero();
+    if (map.getPosition3("elevation_BGK", index, f_point)) 
     {
-        StepMapping(map, index);
+        StepMapping(map, index, f_point);
     } 
     areaSingleNormalComputation(map, index); });
 }
@@ -486,7 +499,7 @@ void obstacle_mapping::areaSingleNormalComputation(grid_map::GridMap &map, const
     }
 
     Eigen::Vector3d unitaryNormalVector = Eigen::Vector3d::Zero();
-    if (nPoints < 3)
+    if (nPoints < 4)
     {
         ROS_DEBUG("Not enough points to establish normal direction (nPoints = %i)", static_cast<int>(nPoints));
         unitaryNormalVector = Eigen::Vector3d::UnitZ();
@@ -527,7 +540,7 @@ void obstacle_mapping::areaSingleNormalComputation(grid_map::GridMap &map, const
     }
 }
 
-void obstacle_mapping::obstacledetection(grid_map::GridMap &map)
+void obstacle_mapping::simpleobstacledetection(grid_map::GridMap &map)
 {
     auto &minHeightMatrix = map["min_elevation"];
     auto &maxHeightMatrix = map["max_elevation"];
@@ -556,7 +569,7 @@ void obstacle_mapping::obstacledetection(grid_map::GridMap &map)
     }
 }
 
-void obstacle_mapping::obstacledetection(const pcl::PointCloud<pcl::PointXYZ> &localcloud, grid_map::GridMap &map)
+void obstacle_mapping::cloudobstacledetection(const pcl::PointCloud<pcl::PointXYZ> &localcloud, grid_map::GridMap &map)
 {
     auto &minHeightMatrix = map["min_elevation"];
     auto &npointsMatrix = map["n_points"];
@@ -592,6 +605,59 @@ void obstacle_mapping::obstacledetection(const pcl::PointCloud<pcl::PointXYZ> &l
             {
                 obstacle = 1;
             }
+        }
+    }
+}
+
+void obstacle_mapping::mapobstacledetection(grid_map::GridMap &map)
+{
+    auto &heightMatrix = map["elevation"];
+    auto &heightBGKMatrix = map["elevation_BGK"];
+    auto &minHeightMatrix = map["min_elevation"];
+    auto &maxHeightMatrix = map["max_elevation"];
+    auto &slopeMatrix = map["slope"];
+    auto &stepMatrix = map["step"];
+    auto &roughnessMatrix = map["roughness"];
+    auto &traversabilityMatrix = map["traversability"];
+    auto &npointsMatrix = map["n_points"];
+    auto &obstacleMatrix = map["obstacle"];
+    grid_map::Index index;
+
+    for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it)
+    {
+        index = *it;
+        auto &height = heightMatrix(index(0), index(1));
+        auto &height_BGK = heightBGKMatrix(index(0), index(1));
+        auto &minHeight = minHeightMatrix(index(0), index(1));
+        auto &maxHeight = maxHeightMatrix(index(0), index(1));
+        auto &slope = slopeMatrix(index(0), index(1));
+        auto &step = stepMatrix(index(0), index(1));
+        auto &roughness = roughnessMatrix(index(0), index(1));
+        auto &traversability = traversabilityMatrix(index(0), index(1));
+        auto &npoints = npointsMatrix(index(0), index(1));
+        auto &obstacle = obstacleMatrix(index(0), index(1));
+        // if (npoints)
+        // {
+        //     if (maxHeight - minHeight >= heightdiffthreshold_)
+        //     {
+        //         obstacle = 1;
+        //     }
+        // }
+        if (!std::isnan(slope) && slope >= 1)
+        {
+            obstacle = 1;
+        }
+        if (!std::isnan(step) && step >= 1)
+        {
+            obstacle = 1;
+        }
+        if (!std::isnan(roughness) && roughness >= 1)
+        {
+            obstacle = 1;
+        }
+        if (!std::isnan(traversability) && traversability >= traversability_crit_)
+        {
+            obstacle = 1;
         }
     }
 }
@@ -637,7 +703,7 @@ void obstacle_mapping::TraversabilityMapping(grid_map::GridMap &map)
     for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it)
     {
         grid_map::Index idx = *it;
-        if (std::isnan(slopeMatrix(idx(0), idx(1))))
+        if (std::isnan(slopeMatrix(idx(0), idx(1))) || std::isnan(stepMatrix(idx(0), idx(1))) || std::isnan(roughnessMatrix(idx(0), idx(1))))
         {
             continue;
         }

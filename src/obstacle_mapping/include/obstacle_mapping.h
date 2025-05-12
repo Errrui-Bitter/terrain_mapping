@@ -85,6 +85,7 @@ private:
     double slope_crit_;
     double roughness_crit_;
     double step_crit_;
+    double traversability_crit_;
 
     int cntthreshold_;
     int mapping_mode_;
@@ -108,12 +109,13 @@ private:
 
     void DenseMapping(grid_map::GridMap &map);
     void FeatureMapping(grid_map::GridMap &map);
-    void StepMapping(grid_map::GridMap &map, const grid_map::Index &index);
+    void StepMapping(grid_map::GridMap &map, const grid_map::Index &index, const Eigen::Vector3d &f_point);
     void TraversabilityMapping(grid_map::GridMap &map);
     void FeatureMerge();
 
-    void obstacledetection(grid_map::GridMap &map);
-    void obstacledetection(const pcl::PointCloud<pcl::PointXYZ> &localcloud, grid_map::GridMap &map);
+    void simpleobstacledetection(grid_map::GridMap &map);
+    void cloudobstacledetection(const pcl::PointCloud<pcl::PointXYZ> &localcloud, grid_map::GridMap &map);
+    void mapobstacledetection(grid_map::GridMap &map);
 
     void updateHeightStats(float &height, float &variance, float n, float new_height);
     void areaSingleNormalComputation(grid_map::GridMap &map, const grid_map::Index &index);

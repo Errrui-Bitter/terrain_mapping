@@ -1,9 +1,8 @@
 <launch>
   <param name="use_sim_time" value="true" />
-  <arg name="workspace" default="$(env CMAKE_PREFIX_PATH)" />
 
   <node pkg="obstacle_mapping" type="obstacle_mapping_node" name="obstacle_mapping_node" output="screen">
-    <rosparam file="$(find obstacle_mapping)/config/local_1.yaml" command="load" />
+    <rosparam file="$(find obstacle_mapping)/config/global.yaml" command="load" />
   </node>
   <node pkg="rviz" type="rviz" name="test_rviz" args="-d $(find obstacle_mapping)/rviz/test.rviz"/>
 

@@ -6,9 +6,10 @@
 
   <node pkg="obstacle_mapping" type="key_pub_node" name="key_pub_node" output="screen"/>
   
-  <node pkg="obstacle_mapping" type="pose_prediction_node" name="pose_prediction_node" output="screen">
+  <node pkg="obstacle_mapping" type="pose_prediction_node" name="pose_prediction_node" output="screen"/>
 
-  </node>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="robot_to_lidar" args="0 0 0 0 0.0 0 base_link map"/>
+
 
   <node pkg="rviz" type="rviz" name="test_rviz" args="-d $(find obstacle_mapping)/rviz/pose.rviz"/>
 

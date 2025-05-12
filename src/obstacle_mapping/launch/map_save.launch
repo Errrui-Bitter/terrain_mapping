@@ -7,16 +7,6 @@
 
   <node pkg="obstacle_mapping" type="gridmap_saver_node" name="gridmap_saver_node" output="screen"/>
 
-  <!-- Launch the grid map filters demo node. -->
-  <node pkg="grid_map_demos" type="filters_demo" name="grid_map_filter_demo" output="screen">
-    <!-- Input topic -->
-  	<param name="input_topic" value="/localmap" />
-  	<!-- Output topic -->
-  	<param name="output_topic" value="/localmap_filtered" />
-  	<!-- Load grid map filter chain configuration -->
-    <rosparam command="load" file="$(find obstacle_mapping)/config/map_filter.yaml" />
-  </node>
-
   <node pkg="rviz" type="rviz" name="test_rviz" args="-d $(find obstacle_mapping)/rviz/test.rviz"/>
 
   <node pkg="tf2_ros" type="static_transform_publisher" name="robot_to_lidar" args="0 0 0 0 0.0 0 base_link velodyne"/>
