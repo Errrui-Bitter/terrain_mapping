@@ -15,6 +15,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <nav_msgs/Odometry.h>
 
+#include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -42,6 +43,7 @@ private:
     ros::Publisher local_map_pub_;
     ros::Publisher local_fused_map_pub_;
     ros::Publisher global_map_pub_;
+    ros::Publisher pcd_pub_;
     ros::Publisher local_obstacle_map_pub_;
     tf::TransformListener listener_;
     ros::Time map_time_;
@@ -58,9 +60,13 @@ private:
     nav_msgs::Odometry last_odom_;
 
     string lidar_topic_;
+    string odom_topic_;
     string map_frame_;
     string robot_frame_;
     string lidar_frame_;
+    string pcd_path_;
+    string gridmap_savepath_;
+    string gridmap_loadpath_;
 
     double minZ_;
     double maxZ_;
@@ -86,12 +92,20 @@ private:
     double roughness_crit_;
     double step_crit_;
     double traversability_crit_;
+    double slope_crit_fp_;
+    double roughness_crit_fp_;
+    double step_crit_fp_;
+    double traversability_crit_fp_;
+    double traversability_crit_fp_up_;
 
+    int running_mode_;
     int cntthreshold_;
     int mapping_mode_;
     int threadCount_;
+    int pose_mode_;
 
     bool first_map_init_ = true;
+    bool save_map_;
     // bool debug_ = false;
 
     Eigen::Vector3d robot_pose_;
@@ -102,6 +116,7 @@ private:
     void StoreOdom(const nav_msgs::OdometryConstPtr &odom);
 
     void Mapping(const sensor_msgs::PointCloud2ConstPtr &msg);
+    // void MappingPCD(const pcl::PointCloud<pcl::PointXYZ> &cloud);
 
     void LocalMapping(const pcl::PointCloud<pcl::PointXYZ> &localcloud);
     void FuseMap();
@@ -116,13 +131,15 @@ private:
     void simpleobstacledetection(grid_map::GridMap &map);
     void cloudobstacledetection(const pcl::PointCloud<pcl::PointXYZ> &localcloud, grid_map::GridMap &map);
     void mapobstacledetection(grid_map::GridMap &map);
+    void criticalfootprintsfilter(grid_map::GridMap &map);
 
     void updateHeightStats(float &height, float &variance, float n, float new_height);
     void areaSingleNormalComputation(grid_map::GridMap &map, const grid_map::Index &index);
 
     void dist(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &d) const;
     void covSparse(const Eigen::MatrixXf &xStar, const Eigen::MatrixXf &xTrain, Eigen::MatrixXf &Kxz) const;
-
+    void saveMatrixToCSV(const Eigen::MatrixXf &matrix, const std::string &filename);
+    Eigen::MatrixXf loadMatrixFromCSV(const std::string &filename);
     int TimestampMatch(double fixtimestamp, std::deque<nav_msgs::Odometry> target_deque);
     double BayesUpdator(double value_update, double value_observe);
 

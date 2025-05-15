@@ -1,0 +1,58 @@
+mapping_mode: 3
+pose_mode: 1
+lidar_topic: "/velodyne_points"
+odom_topic: "/liorf/mapping/odometry"
+running_mode: 2
+save_map: true
+
+offline:
+  # pcd_path: /home/wxr/ivrc/6t/Planner_src_JFR/src_JFR/map_server/mapfile/terrain.pcd
+  pcd_path: /home/wxr/ivrc/6t/slam_ws/maps/0510-2-trench01_map1_revised.pcd
+  gridmap_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/terrainmap.csv
+  gridmap_loadpath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/terrainmap.csv
+
+frame_id:
+  map: "map"
+  robot: "base_link"
+  odom: "odom"
+  lidar: "velodyne"
+
+preprocess:
+  minZ_: -3.0
+  maxZ_: 2.0
+  lidar_Z: 0
+
+local_map:
+  resolution: 0.2
+  mapLengthX: 40.0
+  mapLengthY: 60.0
+
+global_map:
+  resolution: 0.2
+  mapLengthX: 2000
+  mapLengthY: 2000
+  submapLengthX: 60
+  submapLengthY: 80
+  predictionKernalSize: 1.0
+
+
+
+threadCount: -1
+normal_estimationRadius: 1.0
+stepRadius: 0.5
+
+sensorRangeLimit: 40
+
+heightdiff_threshold: 1.4
+cntratiothreshold: 0.5
+cntthreshold: 1
+slope_crit: 0.2
+roughness_crit: 0.06
+step_crit: 0.6
+traversability_crit: 1.0
+
+slope_crit_fp: 0.8
+roughness_crit_fp: 0.5
+step_crit_fp: 0.6
+traversability_crit_fp: 0.6
+traversability_crit_fp_up: 1.0

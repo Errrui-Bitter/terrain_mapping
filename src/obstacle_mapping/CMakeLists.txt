@@ -64,7 +64,6 @@ add_executable(obstacle_mapping_node src/obstacle_mapping_node.cpp)
 add_dependencies(obstacle_mapping_node obstacle_mapping_lib)
 target_link_libraries(obstacle_mapping_node ${catkin_LIBRARIES} obstacle_mapping_lib)
 
-
 add_executable(pose_prediction_node src/pose_prediction.cpp)
 target_link_libraries(pose_prediction_node ${catkin_LIBRARIES})
 
@@ -74,6 +73,14 @@ target_link_libraries(key_pub_node ${catkin_LIBRARIES})
 add_executable(gridmap_saver_node src/gridmap_saver.cpp)
 target_link_libraries(gridmap_saver_node ${catkin_LIBRARIES})
 
+add_executable(show_vehicle_node src/show_vehicle_node.cpp)
+target_link_libraries(show_vehicle_node ${catkin_LIBRARIES})
+
+add_executable(recieve_points src/recieve_points.cpp)
+target_link_libraries(recieve_points ${catkin_LIBRARIES})
+
+add_executable(publish_points src/publish_points.cpp)
+target_link_libraries(publish_points ${catkin_LIBRARIES})
 
 #############
 ## Install ##

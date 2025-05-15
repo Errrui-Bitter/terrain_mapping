@@ -1,5 +1,8 @@
 mapping_mode: 3
+pose_mode: 1
 lidar_topic: "/velodyne_points"
+odom_topic: "/liorf/mapping/odometry"
+
 frame_id:
   map: "map"
   robot: "base_link"
@@ -8,21 +11,21 @@ frame_id:
 
 preprocess:
   minZ_: -3.0
-  maxZ_: 4.0
+  maxZ_: 2.0
   lidar_Z: 0
 
 local_map:
-  resolution: 0.4
+  resolution: 0.2
   mapLengthX: 40.0
   mapLengthY: 60.0
 
 global_map:
-  resolution: 0.4
+  resolution: 0.2
   mapLengthX: 2000
   mapLengthY: 2000
   submapLengthX: 60
   submapLengthY: 80
-  predictionKernalSize: 2.0
+  predictionKernalSize: 1.0
 
 minZ: -3.0
 maxZ: 3.0
@@ -39,4 +42,4 @@ cntratiothreshold: 0.5
 slope_crit: 0.2
 roughness_crit: 0.06
 step_crit: 0.8
-traversability_crit: 1.0
+traversability_crit: 1.2

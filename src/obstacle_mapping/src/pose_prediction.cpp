@@ -38,17 +38,17 @@ class pose_prediction
 private:
     // 机器人参数
     // 底盘高度图位置
-    std::string ROBOTFILENAME_ = ros::package::getPath("obstacle_mapping") + "/test_map/" + "6t_hight.csv";
-    std::string TERRIANFILENAME_ = ros::package::getPath("obstacle_mapping") + "/test_map/" + "elevation1.csv";
+    std::string ROBOTFILENAME_ = ros::package::getPath("obstacle_mapping") + "/test_map/vehicles/" + "6t_hight.csv";
+    std::string TERRIANFILENAME_;
     // 底盘高度图分辨率
     double RESOLUTION_ = 0.2;
     HeightGrid robot_gridmap_; // 机器人底盘高度图
     HeightGrid robot_gap_map_; // 全局坐标系下高度图和间隙图
     double d_touch_gap_ = 0.05;
-    int rows_ = 16;
-    int cols_ = 27;
-    double length_ = RESOLUTION_ * 27;
-    double wideth_ = RESOLUTION_ * 16;
+    int rows_ = 12;
+    int cols_ = 21;
+    double length_ = RESOLUTION_ * 21;
+    double wideth_ = RESOLUTION_ * 12;
     double center_x_ = wideth_ / 2;
     double center_y_ = length_ / 2;
     double center_z_ = 0.0;
@@ -63,7 +63,7 @@ private:
     std::array<Eigen::Vector2d, 4> foot_print_;
     Eigen::ParametrizedLine<double, 3> rotation_line_;
 
-    Eigen::Vector2d pos_;
+    Eigen::Vector3d pos_;
     Eigen::Vector3d T_vector_;
     Eigen::Matrix3d R_matrix_;
     Eigen::Matrix4d T_matrix_;
@@ -100,7 +100,7 @@ public:
     void calRotationLine();
     bool ifInPoly(const Eigen::Vector3d &intersection);
     double calRotationAngle();
-    void predict();
+    void predict(Eigen::Vector3d pos);
     void showPoseInfo();
     void showPose();
     void iterateOnce();
@@ -113,11 +113,10 @@ public:
 
 pose_prediction::pose_prediction(ros::NodeHandle &nh) : nh_(nh)
 {
-    nh_.param<double>("query_pos_x", pos_.x(), 5.0);
-    nh_.param<double>("query_pos_y", pos_.y(), 0.0);
-    nh_.param<double>("lidar_z_", lidar_z_, 0.0);
+    nh_.param<double>("lidar_z", lidar_z_, 0.0);
+    nh_.param<string>("terrainmap_file", TERRIANFILENAME_, ros::package::getPath("obstacle_mapping") + "/test_map/" + "elevation1.csv");
 
-    loadCsvToMatrix(ROBOTFILENAME_, robot_gridmap_, 16, 27);
+    loadCsvToMatrix(ROBOTFILENAME_, robot_gridmap_, rows_, cols_);
     setCenterXYZ(robot_gridmap_, center_x_, center_y_, center_z_);
     loadCsvToMatrix(TERRIANFILENAME_, terrain_gridmap_HG_, 200, 300);
     setCenterXYZ(terrain_gridmap_HG_, 0, 0, -lidar_z_);
@@ -144,7 +143,7 @@ void pose_prediction::loadCsvToMatrix(const string &FILENAME, HeightGrid &map, i
     std::ifstream inputFile(FILENAME);
     if (!inputFile.is_open())
     {
-        std::cerr << "Failed to open the file." << std::endl;
+        std::cerr << "Failed to open the file:" << FILENAME.c_str() << std::endl;
         return;
     }
 
@@ -209,9 +208,10 @@ void pose_prediction::mapcallback(const grid_map_msgs::GridMap::ConstPtr msg)
  * @param pos 需要估计的车辆局部坐标系下的查询位置
  * @return:
  */
-void pose_prediction::predict()
+void pose_prediction::predict(Eigen::Vector3d pos)
 {
-    ROS_INFO("Predicting Pose on X:%.2f, Y:%.2f ......", pos_.x(), pos_.y());
+    pos_ = pos;
+    ROS_INFO("Predicting Pose on X:%.2f, Y:%.2f at Yaw: %.2f pi ......", pos_.x(), pos_.y(), pos_.z());
     touch_points_.clear();
     local_2D_touch_points_.clear();
     touch_poly_.clear();
@@ -224,7 +224,7 @@ void pose_prediction::predict()
     submap_length_ = grid_map::Length(radius, radius);
     // 获取查询位置的子图
     bool success_submap = false;
-    terrain_sub_gridmap_ = terrain_gridmap_.getSubmap(pos_, submap_length_, success_submap);
+    terrain_sub_gridmap_ = terrain_gridmap_.getSubmap(pos_.head<2>(), submap_length_, success_submap);
     if (success_submap == false)
     {
         ROS_WARN("cound not get full submap!");
@@ -251,6 +251,13 @@ void pose_prediction::predict()
     double angle = acos(zAxis.dot(normal_vec));
 
     rotationMatrix = Eigen::AngleAxisd(angle, rotationAxis.normalized()).toRotationMatrix();
+
+    // 考虑yaw 角度
+    Eigen::Matrix3d yawRotation;
+    double yaw_angle = pos_.z() / 180 * M_PI;
+    yawRotation = Eigen::AngleAxisd(yaw_angle, zAxis).toRotationMatrix();
+    rotationMatrix = yawRotation * rotationMatrix;
+
     T_matrix_ = Eigen::Matrix4d::Zero();
     T_matrix_.block<3, 3>(0, 0) = rotationMatrix;
     T_matrix_.block<4, 1>(0, 3) = Eigen::Vector4d(pos_(0), pos_(1), 0.0, 1.0);
@@ -450,7 +457,7 @@ void pose_prediction::iterateOnce()
         Rotate_with_rotation_line_ = T2 * R3 * R2 * R1 * T1;
         T_matrix_ = Rotate_with_rotation_line_ * T_matrix_;
 
-        T_matrix_.block<2, 1>(0, 3) = pos_;
+        T_matrix_.block<2, 1>(0, 3) = pos_.head<2>();
         T_vector_ = T_matrix_.block(0, 3, 3, 1);
         R_matrix_ = T_matrix_.block(0, 0, 3, 3);
         // key_pushed_ = false;
@@ -785,9 +792,9 @@ void pose_prediction::pubishmap(const ros::TimerEvent &event)
     terrain_submap_pub_.publish(grid_map_msg_sub);
 
     grid_map::GridMap robot_gridmap;
-    grid_map::Length mapLength(3.2, 5.4);
-    robot_gridmap.setFrameId("base_link");
-    robot_gridmap.setGeometry(mapLength, 0.2, grid_map::Position(pos_.x(), pos_.y()));
+    grid_map::Length mapLength(wideth_, length_);
+    robot_gridmap.setFrameId("robot");
+    robot_gridmap.setGeometry(mapLength, 0.2, grid_map::Position(0,0));
     robot_gridmap.add("elevation", robot_gridmap_.Z_.cast<float>());
     // robot_gridmap.add("elevation", robot_gap_map_.Z_.cast<float>());
     robot_gridmap_msg.info.header.stamp = ros::Time::now();
@@ -800,6 +807,10 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "pose_prediction");
     ros::NodeHandle nh;
 
+    Eigen::Vector3d pos;
+    nh.param<double>("query_pos_x", pos.x(), 5.0);
+    nh.param<double>("query_pos_y", pos.y(), 0.0);
+    nh.param<double>("query_pos_z", pos.z(), 0.0);
     pose_prediction pose_predictor(nh);
-    pose_predictor.predict();
+    pose_predictor.predict(pos);
 }

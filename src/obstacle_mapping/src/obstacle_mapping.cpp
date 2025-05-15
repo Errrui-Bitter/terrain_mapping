@@ -23,12 +23,22 @@ void obstacle_mapping::init()
     /****************************
     init params
     ****************************/
+    nh_.param<bool>("save_map", save_map_, false);
+    nh_.param<int>("running_mode", running_mode_, 1);
     nh_.param<int>("mapping_mode", mapping_mode_, 1);
     nh_.param<int>("threadCount", threadCount_, 1);
+    nh_.param<int>("pose_mode", pose_mode_, 1);
+    nh_.param<int>("cntthreshold", cntthreshold_, 5);
     nh_.param<string>("lidar_topic", lidar_topic_, "/velodyne_points");
+    nh_.param<string>("odom_topic", odom_topic_, "/liorf/mapping/odometry");
     nh_.param<string>("frame_id/map", map_frame_, "map");
     nh_.param<string>("frame_id/robot", robot_frame_, "base_link");
     nh_.param<string>("frame_id/lidar", lidar_frame_, "velodyne");
+    nh_.param<string>("offline/pcd_path", pcd_path_, "/home/wxr/ivrc/6t/slam_ws/maps/zongpo.pcd");
+    nh_.param<string>("offline/gridmap_savepath", gridmap_savepath_,
+                      "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/terrainmap.csv");
+    nh_.param<string>("offline/gridmap_loadpath", gridmap_loadpath_,
+                      "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/elevation1.csv");
     nh_.param<double>("local_map/resolution", local_map_resolution_, 0.2);
     nh_.param<double>("local_map/mapLengthX", local_map_length_x_, 40.0);
     nh_.param<double>("local_map/mapLengthY", local_map_length_y_, 60.0);
@@ -50,6 +60,11 @@ void obstacle_mapping::init()
     nh_.param<double>("roughness_crit", roughness_crit_, 0.5);
     nh_.param<double>("step_crit", step_crit_, 0.8);
     nh_.param<double>("traversability_crit", traversability_crit_, 0.8);
+    nh_.param<double>("slope_crit_fp", slope_crit_fp_, 0.2);
+    nh_.param<double>("roughness_crit_fp", roughness_crit_fp_, 0.5);
+    nh_.param<double>("step_crit_fp", step_crit_fp_, 0.8);
+    nh_.param<double>("traversability_crit_fp", traversability_crit_fp_, 0.8);
+    nh_.param<double>("traversability_crit_fp_up", traversability_crit_fp_up_, 0.8);
 
     /****************************
     init gridmap
@@ -59,15 +74,62 @@ void obstacle_mapping::init()
     initgridmap(fused_local_map_, robot_frame_, local_map_resolution_, local_map_length_x_, local_map_length_y_);
     initgridmap(global_map_, map_frame_, global_map_resolution_, global_map_length_x_, global_map_length_y_);
 
-    /****************************
-    init ros
-    ****************************/
-    lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 5, boost::bind(&obstacle_mapping::Mapping, this, _1));
-    odom_sub_ = nh_.subscribe<nav_msgs::Odometry>("/liorf/mapping/odometry", 1, boost::bind(&obstacle_mapping::StoreOdom, this, _1));
-
     local_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/localmap", 1);
     local_fused_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/localfusedmap", 1);
     global_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/globalmap", 1);
+
+    if (running_mode_ == 1)
+    {
+        lidar_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_topic_, 5, boost::bind(&obstacle_mapping::Mapping, this, _1));
+        odom_sub_ = nh_.subscribe<nav_msgs::Odometry>(odom_topic_, 1, boost::bind(&obstacle_mapping::StoreOdom, this, _1));
+        ros::spin();
+    }
+    else if (running_mode_ == 2 || running_mode_ == 3)
+    {
+        pcd_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/pcd_points", 1);
+
+        ros::Time::init();
+        // 创建点云对象
+        auto cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        // 加载 PCD 文件
+        if (pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_path_, *cloud) == -1)
+        {
+            PCL_ERROR("Couldn't read file %s \n", pcd_path_.c_str());
+            return;
+        }
+        std::cout << "Loaded " << cloud->width * cloud->height << " data points from " << pcd_path_ << std::endl;
+        sensor_msgs::PointCloud2 cloud_msg;
+        pcl::toROSMsg(*cloud, cloud_msg);
+        cloud_msg.header.stamp = ros::Time::now();
+        cloud_msg.header.frame_id = "map";
+
+        if (running_mode_ == 2)
+        {
+            sensor_msgs::PointCloud2ConstPtr cloud_msg_ptr = boost::make_shared<const sensor_msgs::PointCloud2>(cloud_msg);
+            Mapping(cloud_msg_ptr);
+            if (save_map_)
+            {
+                saveMatrixToCSV(local_map_["elevation_BGK"], gridmap_savepath_);
+            }
+        }
+        else if (running_mode_ == 3)
+        {
+            local_map_.add("elevation_BGK", loadMatrixFromCSV(gridmap_loadpath_));
+            local_map_.add("elevation", local_map_["elevation_BGK"]);
+            FeatureMapping(local_map_);
+            TraversabilityMapping(local_map_);
+            mapobstacledetection(local_map_);
+        }
+
+        ros::Rate loop_rate(10);
+        while (ros::ok())
+        {
+            publocalmap();
+            pcd_pub_.publish(cloud_msg);
+            ros::spinOnce();
+            loop_rate.sleep();
+        }
+    }
 }
 
 void obstacle_mapping::initgridmap(grid_map::GridMap &map, string frame, double height_map_resolution, double mapLength_x, double mapLength_y)
@@ -90,6 +152,7 @@ void obstacle_mapping::initgridmap(grid_map::GridMap &map, string frame, double 
     map.add("n_points", 0);
     map.add("obstacle", 0);
     map.add("obstacle_cnt", 0);
+    map.add("critical", 0);
 }
 
 void obstacle_mapping::StoreOdom(const nav_msgs::OdometryConstPtr &odom)
@@ -105,6 +168,39 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
     auto inputcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     pcl::fromROSMsg(*msg, *inputcloud);
     ROS_INFO("Lidar msg time : %f", map_time_.toSec());
+
+    if (running_mode_ != 1)
+    {
+        ROS_INFO("Offline Mapping...");
+
+        robot_pose_ = Eigen::Vector3d::Zero();
+
+        auto localcloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        localcloud->clear();
+        localcloud->reserve(inputcloud->size());
+        for (auto &point : inputcloud->points)
+        {
+            point.z += lidar_z_;
+            if (point.z >= minZ_ && point.z <= maxZ_)
+            {
+                localcloud->points.push_back(point);
+            }
+        }
+        LocalMapping(*localcloud);
+        cloudobstacledetection(*localcloud, local_map_);
+        double time1 = ros::Time::now().toSec();
+        DenseMapping(local_map_);
+        double time2 = ros::Time::now().toSec();
+        FeatureMapping(local_map_);
+        double time3 = ros::Time::now().toSec();
+        TraversabilityMapping(local_map_);
+        criticalfootprintsfilter(local_map_);
+        mapobstacledetection(local_map_);
+
+        ROS_INFO("DenseMapping takes time : %f s", time2 - time1);
+        ROS_INFO("FeatureMapping takes time : %f s", time3 - time2);
+        return;
+    }
 
     /****************************
     单帧地图模式
@@ -170,6 +266,7 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
         FuseMap();
         pubfusedlocalmap();
         local_map_.clearAll();
+        return;
     }
 
     /****************************
@@ -183,19 +280,43 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
         将点云坐标转到map（全局）坐标系
         ****************************/
         lidar_frame_ = msg->header.frame_id;
-
-        tf::StampedTransform lidarmaptransform;
-        try
-        {
-            // listener_.waitForTransform(map_frame_, lidar_frame_, ros::Time(0), ros::Duration(0.1));
-            listener_.lookupTransform(map_frame_, lidar_frame_, ros::Time(0), lidarmaptransform);
-        }
-        catch (tf::TransformException &ex)
-        {
-            ROS_WARN("%s", ex.what());
-        }
         Eigen::Affine3d lmtransformMatrix = Eigen::Affine3d::Identity();
-        poseTFToEigen(lidarmaptransform, lmtransformMatrix);
+        if (pose_mode_ == 1)
+        {
+            // 默认TF
+            tf::StampedTransform lidarmaptransform;
+            try
+            {
+                // listener_.waitForTransform(map_frame_, lidar_frame_, ros::Time(0), ros::Duration(0.1));
+                listener_.lookupTransform(map_frame_, lidar_frame_, ros::Time(0), lidarmaptransform);
+            }
+            catch (tf::TransformException &ex)
+            {
+                ROS_WARN("%s", ex.what());
+            }
+            poseTFToEigen(lidarmaptransform, lmtransformMatrix);
+        }
+        else if (pose_mode_ == 2)
+        {
+
+            // Odometry
+            int matchodom_index = TimestampMatch(map_time_.toSec(), odom_deque_);
+            cur_odom_ = odom_deque_[matchodom_index];
+            double x = cur_odom_.pose.pose.position.x;
+            double y = cur_odom_.pose.pose.position.y;
+            double z = cur_odom_.pose.pose.position.z;
+            double qx = cur_odom_.pose.pose.orientation.x;
+            double qy = cur_odom_.pose.pose.orientation.y;
+            double qz = cur_odom_.pose.pose.orientation.z;
+            double qw = cur_odom_.pose.pose.orientation.w;
+            Eigen::Quaterniond quaternion(qw, qx, qy, qz);
+            lmtransformMatrix = Eigen::Translation3d(x, y, z) * quaternion;
+        }
+        else
+        {
+            ROS_WARN("pose mode %d is unknown!", pose_mode_);
+        }
+
         robot_pose_ = lmtransformMatrix.translation();
         ROS_INFO("robot position: %.2f, %.2f, %.2f", robot_pose_.x(), robot_pose_.y(), robot_pose_.z());
 
@@ -248,6 +369,7 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
         ROS_INFO("DenseMapping takes time : %f s", time2 - time1);
         ROS_INFO("FeatureMapping takes time : %f s", time3 - time2);
         pubglobalmap();
+        return;
     }
     else
     {
@@ -255,6 +377,21 @@ void obstacle_mapping::Mapping(const sensor_msgs::PointCloud2ConstPtr &msg)
     }
     return;
 }
+
+// void obstacle_mapping::MappingPCD(const pcl::PointCloud<pcl::PointXYZ> &cloud)
+// {
+//     LocalMapping(cloud);
+//     double time1 = ros::Time::now().toSec();
+//     DenseMapping(local_map_);
+//     double time2 = ros::Time::now().toSec();
+//     FeatureMapping(local_map_);
+//     double time3 = ros::Time::now().toSec();
+//     TraversabilityMapping(local_map_);
+//     mapobstacledetection(local_map_);
+
+//     ROS_INFO("DenseMapping takes time : %f s", time2 - time1);
+//     ROS_INFO("FeatureMapping takes time : %f s", time3 - time2);
+// }
 
 void obstacle_mapping::LocalMapping(const pcl::PointCloud<pcl::PointXYZ> &localcloud)
 {
@@ -643,21 +780,13 @@ void obstacle_mapping::mapobstacledetection(grid_map::GridMap &map)
         //         obstacle = 1;
         //     }
         // }
-        if (!std::isnan(slope) && slope >= 1)
+        if ((!std::isnan(slope) && slope >= 1) ||
+            (!std::isnan(roughness) && roughness >= 1) ||
+            (!std::isnan(step) && step >= 1) ||
+            (!std::isnan(traversability) && traversability >= traversability_crit_))
         {
             obstacle = 1;
-        }
-        if (!std::isnan(step) && step >= 1)
-        {
-            obstacle = 1;
-        }
-        if (!std::isnan(roughness) && roughness >= 1)
-        {
-            obstacle = 1;
-        }
-        if (!std::isnan(traversability) && traversability >= traversability_crit_)
-        {
-            obstacle = 1;
+            traversability = 1;
         }
     }
 }
@@ -830,6 +959,10 @@ int obstacle_mapping::TimestampMatch(double fixtimestamp, std::deque<nav_msgs::O
             index = i;
         }
     }
+    if (min_diff > 1.0)
+    {
+        ROS_WARN("Time delay between lidar and pose is over 1 sec!");
+    }
     return index;
 }
 
@@ -875,6 +1008,138 @@ void obstacle_mapping::covSparse(const Eigen::MatrixXf &xStar, const Eigen::Matr
         for (int j = 0; j < Kxz.cols(); ++j)
             if (Kxz(i, j) < 0)
                 Kxz(i, j) = 0;
+}
+
+void obstacle_mapping::saveMatrixToCSV(const Eigen::MatrixXf &matrix, const std::string &filename)
+{
+    std::ofstream file(filename);
+    if (!file.is_open())
+    {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        return;
+    }
+
+    for (int i = 0; i < matrix.rows(); ++i)
+    {
+        for (int j = 0; j < matrix.cols(); ++j)
+        {
+            file << matrix(i, j);
+            if (j < matrix.cols() - 1)
+            {
+                file << ","; // 行内各元素间添加逗号
+            }
+        }
+        file << std::endl; // 换行
+    }
+
+    file.close();
+    std::cout << "Matrix saved to " << filename << std::endl;
+}
+
+Eigen::MatrixXf obstacle_mapping::loadMatrixFromCSV(const std::string &filename)
+{
+    std::ifstream file(filename);
+    if (!file.is_open())
+    {
+        throw std::runtime_error("Failed to open file: " + filename);
+    }
+
+    std::vector<std::vector<float>> data;
+    std::string line;
+
+    // 逐行读取文件
+    while (std::getline(file, line))
+    {
+        std::stringstream ss(line);
+        std::string value;
+        std::vector<float> row;
+
+        // 逐个读取列值
+        while (std::getline(ss, value, ','))
+        {
+            row.push_back(std::stof(value));
+        }
+        data.push_back(row);
+    }
+
+    file.close();
+
+    // 将数据转换为 Eigen 矩阵
+    Eigen::MatrixXf matrix(data.size(), data[0].size());
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        for (size_t j = 0; j < data[i].size(); ++j)
+        {
+            matrix(i, j) = data[i][j];
+        }
+    }
+
+    return matrix;
+}
+
+void obstacle_mapping::criticalfootprintsfilter(grid_map::GridMap &map)
+{
+    auto &heightMatrix = map["elevation"];
+    auto &heightBGKMatrix = map["elevation_BGK"];
+    auto &minHeightMatrix = map["min_elevation"];
+    auto &maxHeightMatrix = map["max_elevation"];
+    auto &slopeMatrix = map["slope"];
+    auto &stepMatrix = map["step"];
+    auto &roughnessMatrix = map["roughness"];
+    auto &traversabilityMatrix = map["traversability"];
+    auto &obstacleMatrix = map["obstacle"];
+    auto &criticalMatrix = map["critical"];
+    grid_map::Index index;
+    grid_map::Size size = map.getSize();
+
+    for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it)
+    {
+        index = *it;
+        auto &height = heightMatrix(index(0), index(1));
+        auto &height_BGK = heightBGKMatrix(index(0), index(1));
+        auto &minHeight = minHeightMatrix(index(0), index(1));
+        auto &maxHeight = maxHeightMatrix(index(0), index(1));
+        auto &slope = slopeMatrix(index(0), index(1));
+        auto &step = stepMatrix(index(0), index(1));
+        auto &roughness = roughnessMatrix(index(0), index(1));
+        auto &traversability = traversabilityMatrix(index(0), index(1));
+        auto &obstacle = obstacleMatrix(index(0), index(1));
+        auto &critical = criticalMatrix(index(0), index(1));
+
+        // if (((!std::isnan(slope) && slope >= slope_crit_fp_ && slope <= 1.0) ||
+        //     (!std::isnan(roughness) && roughness >= roughness_crit_fp_ && roughness <= 1.0) ||
+        //     (!std::isnan(step) && step >= step_crit_fp_ && step <= 1.0)
+        //     // (!std::isnan(traversability) && traversability >= traversability_crit_fp_)
+        //     )
+        //     // traversability != 1
+        //     )
+        if (traversability >= traversability_crit_fp_ && traversability <= traversability_crit_fp_up_ &&
+            step >= step_crit_fp_ && obstacle != 1)
+        {
+            int nannum = 0;
+            bool out = false;
+            for (int i = index(0) - 5; i < index(0) + 5; i ++)
+            {
+                for (int j = index(1) - 5; j < index(1) + 5; j++)
+                {
+                    grid_map::Index ridx(i, j);
+                    if (i < 0 || i >= size.x() || j < 0 || j >= size.y())
+                    {
+                        out = true;
+                    }else{
+                        if(std::isnan(heightBGKMatrix(i, j))){
+                            nannum ++;
+                        }
+                    }
+                }
+            }
+            if(out || nannum > 3){
+                continue;
+            }
+            critical = 1;
+            // traversability = 1;
+        }
+    }
 }
 
 void obstacle_mapping::publocalmap()
