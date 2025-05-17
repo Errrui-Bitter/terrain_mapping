@@ -35,8 +35,14 @@ void obstacle_mapping::init()
     nh_.param<string>("frame_id/robot", robot_frame_, "base_link");
     nh_.param<string>("frame_id/lidar", lidar_frame_, "velodyne");
     nh_.param<string>("offline/pcd_path", pcd_path_, "/home/wxr/ivrc/6t/slam_ws/maps/zongpo.pcd");
-    nh_.param<string>("offline/gridmap_savepath", gridmap_savepath_,
-                      "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/terrainmap.csv");
+    nh_.param<string>("offline/elevation_BGK_savepath", elevation_BGK_savepath_,
+                      "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/elevation_BGKmap.csv");
+    nh_.param<string>("offline/critical_savepath", critical_savepath_,
+                      "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/criticalmap.csv");
+    nh_.param<string>("offline/traversability_savepath", traversability_savepath_,
+                      "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/traversabilitymap.csv");
+    nh_.param<string>("offline/obstacle_savepath", obstacle_savepath_,
+                      "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/obstaclemap.csv");
     nh_.param<string>("offline/gridmap_loadpath", gridmap_loadpath_,
                       "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/elevation1.csv");
     nh_.param<double>("local_map/resolution", local_map_resolution_, 0.2);
@@ -109,7 +115,10 @@ void obstacle_mapping::init()
             Mapping(cloud_msg_ptr);
             if (save_map_)
             {
-                saveMatrixToCSV(local_map_["elevation_BGK"], gridmap_savepath_);
+                saveMatrixToCSV(local_map_["elevation_BGK"], elevation_BGK_savepath_);
+                saveMatrixToCSV(local_map_["critical"], critical_savepath_);
+                saveMatrixToCSV(local_map_["traversability"], traversability_savepath_);
+                saveMatrixToCSV(local_map_["obstacle"], obstacle_savepath_);
             }
         }
         else if (running_mode_ == 3)
@@ -1118,7 +1127,7 @@ void obstacle_mapping::criticalfootprintsfilter(grid_map::GridMap &map)
         {
             int nannum = 0;
             bool out = false;
-            for (int i = index(0) - 5; i < index(0) + 5; i ++)
+            for (int i = index(0) - 5; i < index(0) + 5; i++)
             {
                 for (int j = index(1) - 5; j < index(1) + 5; j++)
                 {
@@ -1126,14 +1135,18 @@ void obstacle_mapping::criticalfootprintsfilter(grid_map::GridMap &map)
                     if (i < 0 || i >= size.x() || j < 0 || j >= size.y())
                     {
                         out = true;
-                    }else{
-                        if(std::isnan(heightBGKMatrix(i, j))){
-                            nannum ++;
+                    }
+                    else
+                    {
+                        if (std::isnan(heightBGKMatrix(i, j)))
+                        {
+                            nannum++;
                         }
                     }
                 }
             }
-            if(out || nannum > 3){
+            if (out || nannum > 3)
+            {
                 continue;
             }
             critical = 1;

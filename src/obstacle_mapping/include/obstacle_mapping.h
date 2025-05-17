@@ -65,7 +65,10 @@ private:
     string robot_frame_;
     string lidar_frame_;
     string pcd_path_;
-    string gridmap_savepath_;
+    string elevation_BGK_savepath_;
+    string critical_savepath_;
+    string traversability_savepath_;
+    string obstacle_savepath_;
     string gridmap_loadpath_;
 
     double minZ_;

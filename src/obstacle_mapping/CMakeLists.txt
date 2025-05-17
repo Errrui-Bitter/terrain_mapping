@@ -64,8 +64,11 @@ add_executable(obstacle_mapping_node src/obstacle_mapping_node.cpp)
 add_dependencies(obstacle_mapping_node obstacle_mapping_lib)
 target_link_libraries(obstacle_mapping_node ${catkin_LIBRARIES} obstacle_mapping_lib)
 
-add_executable(pose_prediction_node src/pose_prediction.cpp)
+add_executable(pose_prediction_node src/pose_prediction_node.cpp)
 target_link_libraries(pose_prediction_node ${catkin_LIBRARIES})
+
+add_executable(pose_prediction src/pose_prediction.cpp)
+target_link_libraries(pose_prediction ${catkin_LIBRARIES})
 
 add_executable(key_pub_node src/key_pub_node.cpp)
 target_link_libraries(key_pub_node ${catkin_LIBRARIES})

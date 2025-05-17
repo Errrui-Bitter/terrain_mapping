@@ -2,6 +2,7 @@
   <param name="query_pos_x" value="0.0"/>
   <param name="query_pos_y" value="7.0"/>
   <param name="query_pos_z" value="-90.0"/>
+  <param name="save_pose" value="true"/>
   <param name="lidar_z" value="0"/>
   <param name="terrainmap_file" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/terrainmap.csv"/>
   <param name="robot_scale" value="0.75"/>

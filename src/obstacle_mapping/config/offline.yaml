@@ -6,10 +6,12 @@ running_mode: 2
 save_map: true
 
 offline:
-  # pcd_path: /home/wxr/ivrc/6t/Planner_src_JFR/src_JFR/map_server/mapfile/terrain.pcd
-  pcd_path: /home/wxr/ivrc/6t/slam_ws/maps/0510-2-trench01_map1_revised.pcd
-  gridmap_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/terrainmap.csv
-  gridmap_loadpath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/terrainmap.csv
+  pcd_path: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/0512-wall01-map.pcd
+  elevation_BGK_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/elevation_BGKmap.csv
+  critical_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/criticalmap.csv
+  traversability_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/traversabilitymap.csv
+  obstacle_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/obstaclemap.csv
+  gridmap_loadpath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/elevation_BGKmap.csv
 
 frame_id:
   map: "map"

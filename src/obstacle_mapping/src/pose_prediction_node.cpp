@@ -2,8 +2,9 @@
  * * * @description:
  * * * @filename: pose_prediction.cpp
  * * * @author: wangxurui
- * * * @date: 2025-05-15 17:26:47
+ * * * @date: 2025-04-07 17:51:04
  **/
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -53,8 +54,6 @@ private:
     double center_z_ = 0.0;
     double local_min_z_;
     double lidar_z_;
-    double roll_crit_;
-    double pitch_crit_;
     int interation_;
 
     std::vector<Eigen::Vector3d> touch_points_;
@@ -97,17 +96,20 @@ public:
     pose_prediction(ros::NodeHandle &nh);
     ~pose_prediction();
     void loadCsvToMatrix(const string &FILENAME, HeightGrid &map, int rows, int cols);
-    Eigen::MatrixXf loadMatrixFromCSV(const std::string &filename);
+    void mapcallback(const grid_map_msgs::GridMap::ConstPtr msg);
+    void KeyCallback(const std_msgs::Bool::ConstPtr key);
     void calRotationLine();
     bool ifInPoly(const Eigen::Vector3d &intersection);
     double calRotationAngle();
-    int predict(Eigen::Vector3d pos, double &roll, double &pitch);
+    void predict(Eigen::Vector3d pos);
+    void showPoseInfo();
+    void showPose();
     void iterateOnce();
+    void pubishmap(const ros::TimerEvent &event);
     void setCenterXYZ(HeightGrid &heightmap, const double &startX, const double &startY, const double &startZ);
     Eigen::ParametrizedLine<double, 3> getRotationLine(const Eigen::Vector3d &intersection, const Eigen::Vector3d &projection, const Eigen::Vector3d &F);
     Eigen::Vector3d fitplane(vector<Eigen::Vector3d> points);
     Eigen::Vector3d getProjectePoint(const Eigen::Vector3d &p1, const Eigen::Vector3d &p2, const Eigen::Vector3d &a);
-    void calrollpitch(Eigen::Matrix3d &rotation, double &roll, double &pitch);
 };
 
 pose_prediction::pose_prediction(ros::NodeHandle &nh) : nh_(nh)
@@ -115,8 +117,7 @@ pose_prediction::pose_prediction(ros::NodeHandle &nh) : nh_(nh)
     nh_.param<bool>("save_pose", save_pose_, true);
     nh_.param<double>("lidar_z", lidar_z_, 0.0);
     nh_.param<string>("terrainmap_file", TERRIANFILENAME_, ros::package::getPath("obstacle_mapping") + "/test_map/" + "elevation1.csv");
-    nh_.param<double>("roll_crit", roll_crit_, 30);
-    nh_.param<double>("pitch_crit", pitch_crit_, 30);
+
     loadCsvToMatrix(ROBOTFILENAME_, robot_gridmap_, rows_, cols_);
     setCenterXYZ(robot_gridmap_, center_x_, center_y_, center_z_);
     loadCsvToMatrix(TERRIANFILENAME_, terrain_gridmap_HG_, 200, 300);
@@ -125,6 +126,14 @@ pose_prediction::pose_prediction(ros::NodeHandle &nh) : nh_(nh)
     terrain_gridmap_.setFrameId("map");
     terrain_gridmap_.setGeometry(mapLength, 0.2, grid_map::Position(0.0, 0.0));
     terrain_gridmap_.add("elevation", terrain_gridmap_HG_.Z_.cast<float>());
+
+    // map_sub_ = nh_.subscribe<grid_map_msgs::GridMap>("/localmap", 10, boost::bind(&pose_prediction::mapcallback, this, _1));
+    // key_sub_ = nh_.subscribe<std_msgs::Bool>("/key", 10, boost::bind(&pose_prediction::KeyCallback, this, _1));
+    marker_pub_ = nh_.advertise<visualization_msgs::Marker>("/pose_visualization", 10);
+    terrain_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/terrain_map", 10);
+    terrain_submap_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/terrain_submap", 10);
+    robot_gap_map_pub_ = nh_.advertise<grid_map_msgs::GridMap>("/robot_map", 10);
+    maptimer_ = nh_.createTimer(ros::Duration(0.1), boost::bind(&pose_prediction::pubishmap, this, _1));
 }
 
 pose_prediction::~pose_prediction()
@@ -173,47 +182,6 @@ void pose_prediction::loadCsvToMatrix(const string &FILENAME, HeightGrid &map, i
     return;
 }
 
-Eigen::MatrixXf pose_prediction::loadMatrixFromCSV(const std::string &filename)
-{
-    std::ifstream file(filename);
-    if (!file.is_open())
-    {
-        throw std::runtime_error("Failed to open file: " + filename);
-    }
-
-    std::vector<std::vector<float>> data;
-    std::string line;
-
-    // 逐行读取文件
-    while (std::getline(file, line))
-    {
-        std::stringstream ss(line);
-        std::string value;
-        std::vector<float> row;
-
-        // 逐个读取列值
-        while (std::getline(ss, value, ','))
-        {
-            row.push_back(std::stof(value));
-        }
-        data.push_back(row);
-    }
-
-    file.close();
-
-    // 将数据转换为 Eigen 矩阵
-    Eigen::MatrixXf matrix(data.size(), data[0].size());
-    for (size_t i = 0; i < data.size(); ++i)
-    {
-        for (size_t j = 0; j < data[i].size(); ++j)
-        {
-            matrix(i, j) = data[i][j];
-        }
-    }
-
-    return matrix;
-}
-
 void pose_prediction::setCenterXYZ(HeightGrid &heightmap, const double &startX, const double &startY, const double &startZ)
 {
     for (auto x = heightmap.X_.data(); x < heightmap.X_.data() + heightmap.X_.size(); ++x)
@@ -232,15 +200,20 @@ void pose_prediction::setCenterXYZ(HeightGrid &heightmap, const double &startX, 
     }
 }
 
+void pose_prediction::mapcallback(const grid_map_msgs::GridMap::ConstPtr msg)
+{
+    grid_map::GridMapRosConverter::fromMessage(*msg, terrain_gridmap_);
+}
+
 /*!
  * 预测位姿
  * @param pos 需要估计的车辆局部坐标系下的查询位置
  * @return:
  */
-int pose_prediction::predict(Eigen::Vector3d pos, double &roll, double &pitch)
+void pose_prediction::predict(Eigen::Vector3d pos)
 {
     pos_ = pos;
-    ROS_INFO("Predicting Pose on X:%.2f, Y:%.2f at Yaw: %.2f degree ......", pos_.x(), pos_.y(), pos_.z());
+    ROS_INFO("Predicting Pose on X:%.2f, Y:%.2f at Yaw: %.2f pi ......", pos_.x(), pos_.y(), pos_.z());
     touch_points_.clear();
     local_2D_touch_points_.clear();
     touch_poly_.clear();
@@ -257,7 +230,7 @@ int pose_prediction::predict(Eigen::Vector3d pos, double &roll, double &pitch)
     if (success_submap == false)
     {
         ROS_WARN("cound not get full submap!");
-        return 0;
+        return;
     }
     /****************************
     先根据法向量估计大致姿态
@@ -290,6 +263,19 @@ int pose_prediction::predict(Eigen::Vector3d pos, double &roll, double &pitch)
     T_matrix_ = Eigen::Matrix4d::Zero();
     T_matrix_.block<3, 3>(0, 0) = rotationMatrix;
     T_matrix_.block<4, 1>(0, 3) = Eigen::Vector4d(pos_(0), pos_(1), 0.0, 1.0);
+
+    // debug
+    // std::ofstream outfile("/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/poses/T_matrix_init.txt");
+    // if (outfile.is_open())
+    // {
+    //     outfile << T_matrix_ << std::endl;
+    //     outfile.close();
+    //     std::cout << "Matrix exported to T_matrix_init.txt" << std::endl;
+    // }
+    // else
+    // {
+    //     std::cerr << "Error opening file for writing." << std::endl;
+    // }
 
     /****************************
     迭代初始化
@@ -339,23 +325,24 @@ int pose_prediction::predict(Eigen::Vector3d pos, double &roll, double &pitch)
             }
         }
     }
+    showPose();
+    showPoseInfo();
 
     interation_ = 1;
-    while (interation_ < 50)
+    ros::Rate r(10);
+    while (nh_.ok())
     {
         if (!stable_)
         {
+            if (interation_ > 100)
+            {
+                std::cout << "The interation is more than 888, exit." << std::endl;
+                return;
+            }
+
             iterateOnce();
             interation_++;
-            Eigen::Matrix3d rotation = T_matrix_.block<3, 3>(0, 0);
-            calrollpitch(rotation, roll, pitch);
-            if (roll >= roll_crit_ || pitch >= pitch_crit_)
-            {
-                ROS_WARN("Pose is unstable at position: x = %.2f, y = %.2f!", pos.x(), pos.y());
-                std::cout << "Roll: " << roll << " degree" << std::endl;
-                std::cout << "Pitch: " << pitch << " degree" << std::endl;
-                return 1;
-            }
+
             touch_points_.clear();
             touch_points_2D_.clear();
 
@@ -378,6 +365,7 @@ int pose_prediction::predict(Eigen::Vector3d pos, double &roll, double &pitch)
                         robot_gap_map_.Gap_(i, j) = gap;
                         min_gap = min(min_gap, gap);
 
+                        // bug 第二次迭代，位姿态更新后，没有发现接触点？
                         if (robot_gap_map_.Gap_(i, j) < d_touch_gap_)
                         {
                             touch_points_.push_back(Eigen::Vector3d(robot_gap_map_.X_(i, j), robot_gap_map_.Y_(i, j), robot_gap_map_.Z_(i, j)));
@@ -392,6 +380,7 @@ int pose_prediction::predict(Eigen::Vector3d pos, double &roll, double &pitch)
                 ROS_INFO("no touch points found! failing min_gap!");
                 T_matrix_(2, 3) -= min_gap;
                 T_vector_ = T_matrix_.block(0, 3, 3, 1);
+
                 // 如果没有接触点，整体下移动最小间距，然后判断接触点
                 for (int i = 0; i < rows_; i++)
                 {
@@ -411,18 +400,47 @@ int pose_prediction::predict(Eigen::Vector3d pos, double &roll, double &pitch)
         else
         {
             ROS_INFO_STREAM_ONCE("Pose is stable now~");
-            break;
+            if (save_pose_)
+            {
+                // 提取旋转部分
+                Eigen::Matrix3d rotation = T_matrix_.block<3, 3>(0, 0);
+
+                // 计算滚转（roll）和俯仰（pitch）角度
+                double roll = atan2(rotation(2, 1), rotation(2, 2)); // 计算 roll
+                double pitch = atan2(-rotation(2, 0),
+                                     sqrt(rotation(2, 1) * rotation(2, 1) + rotation(2, 2) * rotation(2, 2))); // 计算 pitch
+
+                // 输出结果
+                std::cout << "Roll: " << roll << " radians" << std::endl;
+                std::cout << "Pitch: " << pitch << " radians" << std::endl;
+                // 打开文件并记录数据
+                std::ofstream outfile("/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/poses/T_matrix_iterated.txt", std::ios::app);
+                if (outfile.is_open())
+                {
+                    outfile << std::fixed << std::setprecision(2) // 设置输出精度
+                            << pos_(0) << ","
+                            << pos_(1) << ","
+                            << pos_(2) << ","
+                            << roll << ","
+                            << pitch << std::endl;
+                    outfile.close();
+                    std::cout << "Data exported to T_matrix_iterated.txt" << std::endl;
+                    save_pose_ = false;
+                }
+                else
+                {
+                    std::cerr << "Error opening file for writing." << std::endl;
+                }
+            }
         }
+
+        showPose();
+        showPoseInfo();
+        ros::spinOnce();
+
+        r.sleep();
     }
-    if (stable_)
-    {
-        return 2;
-    }
-    else
-    {
-        ROS_WARN("Pose is unstable at position: x = %.2f, y = %.2f!", pos.x(), pos.y());
-        return 1;
-    }
+    return;
 }
 
 void pose_prediction::iterateOnce()
@@ -687,117 +705,134 @@ double pose_prediction::calRotationAngle()
     return d_theta;
 }
 
-void pose_prediction::calrollpitch(Eigen::Matrix3d &rotation, double &roll, double &pitch)
+void pose_prediction::showPoseInfo()
 {
-    roll = atan2(rotation(2, 1), rotation(2, 2)) * (180.0 / M_PI);                                                            // 计算 roll
-    pitch = atan2(-rotation(2, 0), sqrt(rotation(2, 1) * rotation(2, 1) + rotation(2, 2) * rotation(2, 2))) * (180.0 / M_PI); // 计算 pitch
-    roll = abs(roll);
-    pitch = abs(pitch);
+    visualization_msgs::Marker touch_points_marker;
+    touch_points_marker.header.frame_id = "map";
+    touch_points_marker.type = visualization_msgs::Marker::POINTS;
+    touch_points_marker.action = visualization_msgs::Marker::ADD;
+    touch_points_marker.scale.x = 0.2;
+    touch_points_marker.scale.y = 0.2;
+    touch_points_marker.scale.z = 0.2;
+    touch_points_marker.ns = "touch_points";
+    ROS_INFO("touch_points size: %d", touch_points_.size());
+    for (size_t i = 0; i < touch_points_.size(); ++i)
+    {
+        geometry_msgs::Point p;
+        p.x = touch_points_[i].x();
+        p.y = touch_points_[i].y();
+        p.z = touch_points_[i].z();
+        touch_points_marker.points.push_back(p);
+    }
+    touch_points_marker.color = std_msgs::ColorRGBA();
+    touch_points_marker.color.r = 1.0;
+    touch_points_marker.color.g = 0.0;
+    touch_points_marker.color.b = 0.0;
+    touch_points_marker.color.a = 1.0;
+
+    touch_points_marker.pose.orientation.x = 0;
+    touch_points_marker.pose.orientation.y = 0;
+    touch_points_marker.pose.orientation.z = 0;
+    touch_points_marker.pose.orientation.w = 1;
+
+    visualization_msgs::Marker line_marker;
+    line_marker.header.frame_id = "map";
+    line_marker.header.stamp = ros::Time::now();
+    line_marker.ns = "line_visualization";
+    line_marker.type = visualization_msgs::Marker::LINE_STRIP;
+    line_marker.action = visualization_msgs::Marker::ADD;
+
+    line_marker.color = std_msgs::ColorRGBA();
+    line_marker.color.r = 1.0;
+    line_marker.color.g = 0.0;
+    line_marker.color.b = 1.0;
+    line_marker.color.a = 1.0;
+
+    line_marker.scale.x = 0.1;
+
+    // 计算起点和终点
+    Eigen::Vector3d point_on_line = rotation_line_.origin();
+    Eigen::Vector3d direction = rotation_line_.direction();
+    Eigen::Vector3d endpoint = point_on_line + direction * 2.0;
+
+    // 添加起点和终点
+    geometry_msgs::Point start;
+    start.x = point_on_line.x();
+    start.y = point_on_line.y();
+    start.z = point_on_line.z();
+    line_marker.points.push_back(start);
+
+    geometry_msgs::Point end;
+    end.x = endpoint.x();
+    end.y = endpoint.y();
+    end.z = endpoint.z();
+    line_marker.points.push_back(end);
+
+    marker_pub_.publish(touch_points_marker);
+    return;
+}
+
+void pose_prediction::showPose()
+{
+    tf::Transform transform;
+
+    // 提取旋转部分
+    Eigen::Matrix3d rotation = T_matrix_.block<3, 3>(0, 0);
+    Eigen::Quaterniond q(rotation);
+
+    // 提取平移部分
+    Eigen::Vector3d translation = T_matrix_.block<3, 1>(0, 3);
+
+    // 设置变换
+    transform.setOrigin(tf::Vector3(translation.x(), translation.y(), translation.z()));
+    transform.setRotation(tf::Quaternion(q.x(), q.y(), q.z(), q.w()));
+
+    // 发布变换
+    br_.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "map", "robot"));
+    return;
+}
+
+void pose_prediction::KeyCallback(const std_msgs::Bool::ConstPtr key)
+{
+    if (key->data == true)
+    {
+        key_pushed_ = true;
+    }
+}
+
+void pose_prediction::pubishmap(const ros::TimerEvent &event)
+{
+    grid_map_msgs::GridMap grid_map_msg, grid_map_msg_sub, robot_gridmap_msg;
+
+    grid_map_msg.info.header.stamp = ros::Time::now();
+    grid_map::Index idx(2, 10);
+    grid_map::GridMapRosConverter::toMessage(terrain_gridmap_, grid_map_msg);
+    terrain_map_pub_.publish(grid_map_msg);
+
+    grid_map_msg_sub.info.header.stamp = ros::Time::now();
+    grid_map::GridMapRosConverter::toMessage(terrain_sub_gridmap_, grid_map_msg_sub);
+    terrain_submap_pub_.publish(grid_map_msg_sub);
+
+    grid_map::GridMap robot_gridmap;
+    grid_map::Length mapLength(wideth_, length_);
+    robot_gridmap.setFrameId("robot");
+    robot_gridmap.setGeometry(mapLength, 0.2, grid_map::Position(0, 0));
+    robot_gridmap.add("elevation", robot_gridmap_.Z_.cast<float>());
+    // robot_gridmap.add("elevation", robot_gap_map_.Z_.cast<float>());
+    robot_gridmap_msg.info.header.stamp = ros::Time::now();
+    grid_map::GridMapRosConverter::toMessage(robot_gridmap, grid_map_msg_sub);
+    robot_gap_map_pub_.publish(grid_map_msg_sub);
 }
 
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "pose_prediction");
     ros::NodeHandle nh;
-    string position_file;
-    string elevation_BGK_path;
-    string critical_path;
-    string traversability_path;
-    string obstacle_path;
-    double yaw;
-    double roll_crit;
-    double pitch_crit;
-    int idx0_min;
-    int idx0_max;
-    int idx1_min;
-    int idx1_max;
-    nh.param<string>("position_file", position_file, "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/poses/position/trench_pos.txt");
-    nh.param<string>("elevation_BGK_path", elevation_BGK_path, "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/elevation_BGKmap.csv");
-    nh.param<string>("critical_path", critical_path, "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/criticalmap.csv");
-    nh.param<string>("traversability_path", traversability_path, "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/traversabilitymap.csv");
-    nh.param<string>("obstacle_path", obstacle_path, "/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/obstaclemap.csv");
-    nh.param<double>("yaw", yaw, 0);
-    nh.param<double>("roll_crit", roll_crit, 30);
-    nh.param<double>("pitch_crit", pitch_crit, 30);
-    nh.param<int>("idx0_min", idx0_min, 80);
-    nh.param<int>("idx0_max", idx0_max, 160);
-    nh.param<int>("idx1_min", idx1_min, 150);
-    nh.param<int>("idx1_max", idx1_max, 180);
 
+    Eigen::Vector3d pos;
+    nh.param<double>("query_pos_x", pos.x(), 5.0);
+    nh.param<double>("query_pos_y", pos.y(), 0.0);
+    nh.param<double>("query_pos_z", pos.z(), 0.0);
     pose_prediction pose_predictor(nh);
-
-    /****************************
-    直接从csv文件读取到gridmap，对gridmap进行评估
-    ****************************/
-    grid_map::GridMap refinedmap;
-    grid_map::Length mapLength(40.0, 60.0);
-    refinedmap.setFrameId("map");
-    refinedmap.setGeometry(mapLength, 0.2, grid_map::Position(0.0, 0.0));
-    refinedmap.add("elevation_BGK", pose_predictor.loadMatrixFromCSV(elevation_BGK_path));
-    refinedmap.add("critical", pose_predictor.loadMatrixFromCSV(critical_path));
-    refinedmap.add("traversability", pose_predictor.loadMatrixFromCSV(traversability_path));
-    refinedmap.add("obstacle", pose_predictor.loadMatrixFromCSV(obstacle_path));
-    refinedmap.add("traversability_refined", refinedmap["traversability"]);
-
-    auto &critical_matrix = refinedmap["critical"];
-    auto &obstacle_matrix = refinedmap["obstacle"];
-    auto &traversability_matrix = refinedmap["traversability"];
-    auto &traversability_refined_matrix = refinedmap["traversability_refined"];
-    for (grid_map::GridMapIterator it(refinedmap); !it.isPastEnd(); ++it)
-    {
-        grid_map::Index idx = *it;
-        if (critical_matrix(idx(0), idx(1)) > 0 || (obstacle_matrix(idx(0), idx(1)) > 0 && idx(0) > idx0_min && idx(0) < idx0_max && idx(1) > idx1_min && idx(1) < idx1_max))
-        // if (critical_matrix(idx(0), idx(1)) > 0 || (obstacle_matrix(idx(0), idx(1)) > 0))
-        {
-            obstacle_matrix(idx(0), idx(1)) = 0;
-
-            Eigen::Vector3d pos3d;
-            Eigen::Matrix4d T_matrix;
-            grid_map::Position pos2d;
-            if (refinedmap.getPosition(idx, pos2d))
-            {
-                pos3d.x() = pos2d.x();
-                pos3d.y() = pos2d.y();
-                pos3d.z() = yaw;
-                double roll = 0, pitch = 0;
-                int label = pose_predictor.predict(pos3d, roll, pitch);
-                if (label == 2)
-                {
-                    std::cout << "Roll: " << roll << " degree" << std::endl;
-                    std::cout << "Pitch: " << pitch << " degree" << std::endl;
-
-                    if (roll >= roll_crit || pitch >= pitch_crit)
-                    {
-                        traversability_refined_matrix(idx(0), idx(1)) = 2.0;
-                    }
-                    else
-                    {
-                        double traversability_refined = 0.5 * roll / roll_crit + 0.5 * pitch / pitch_crit;
-                        double traversability = traversability_matrix(idx(0), idx(1));
-                        traversability_refined_matrix(idx(0), idx(1)) = 0.6 * traversability_refined + 0.4 * traversability;
-                    }
-                }
-                else if (label == 1)
-                {
-                    traversability_refined_matrix(idx(0), idx(1)) = 2.0;
-                }
-            }
-        }
-    }
-
-    ros::Publisher map_pub = nh.advertise<grid_map_msgs::GridMap>("/refined_map", 10);
-
-    grid_map_msgs::GridMap msg;
-    grid_map::GridMapRosConverter::toMessage(refinedmap, msg); // 转换 GridMap 到消息格式
-
-    ros::Rate rate(10); // 发布频率 10 Hz
-    ROS_INFO("Publishing refined grid map.");
-    while (ros::ok())
-    {
-        map_pub.publish(msg);
-        ros::spinOnce();
-        rate.sleep();
-    }
-
-    return 0;
+    pose_predictor.predict(pos);
 }

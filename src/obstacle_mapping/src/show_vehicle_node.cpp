@@ -94,6 +94,7 @@ public:
         marker_point_.lifetime = ros::Duration(0); // 持续时间
         marker_array_.markers.push_back(marker_point_);
 
+        marker_6t_.header.frame_id = "map";
         marker_6t_.header.stamp = ros::Time::now();
         marker_6t_.ns = "pred";
         marker_6t_.id += 1; // 确保每个标记有唯一 ID
