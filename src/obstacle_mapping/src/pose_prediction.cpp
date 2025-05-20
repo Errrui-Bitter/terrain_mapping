@@ -55,6 +55,8 @@ private:
     double lidar_z_;
     double roll_crit_;
     double pitch_crit_;
+    double map_length_X_;
+    double map_length_Y_;
     int interation_;
 
     std::vector<Eigen::Vector3d> touch_points_;
@@ -117,9 +119,13 @@ pose_prediction::pose_prediction(ros::NodeHandle &nh) : nh_(nh)
     nh_.param<string>("terrainmap_file", TERRIANFILENAME_, ros::package::getPath("obstacle_mapping") + "/test_map/" + "elevation1.csv");
     nh_.param<double>("roll_crit", roll_crit_, 30);
     nh_.param<double>("pitch_crit", pitch_crit_, 30);
+    nh_.param<double>("map_length_X", map_length_X_, 30);
+    nh_.param<double>("map_length_Y", map_length_Y_, 30);
     loadCsvToMatrix(ROBOTFILENAME_, robot_gridmap_, rows_, cols_);
     setCenterXYZ(robot_gridmap_, center_x_, center_y_, center_z_);
-    loadCsvToMatrix(TERRIANFILENAME_, terrain_gridmap_HG_, 200, 300);
+    int size_X = map_length_X_ / RESOLUTION_;
+    int size_Y = map_length_Y_ / RESOLUTION_;
+    loadCsvToMatrix(TERRIANFILENAME_, terrain_gridmap_HG_, size_X, size_Y);
     setCenterXYZ(terrain_gridmap_HG_, 0, 0, -lidar_z_);
     grid_map::Length mapLength(40.0, 60.0);
     terrain_gridmap_.setFrameId("map");
@@ -707,6 +713,8 @@ int main(int argc, char **argv)
     double yaw;
     double roll_crit;
     double pitch_crit;
+    double map_length_X;
+    double map_length_Y;
     int idx0_min;
     int idx0_max;
     int idx1_min;
@@ -719,6 +727,8 @@ int main(int argc, char **argv)
     nh.param<double>("yaw", yaw, 0);
     nh.param<double>("roll_crit", roll_crit, 30);
     nh.param<double>("pitch_crit", pitch_crit, 30);
+    nh.param<double>("map_length_X", map_length_X, 30);
+    nh.param<double>("map_length_Y", map_length_Y, 30);
     nh.param<int>("idx0_min", idx0_min, 80);
     nh.param<int>("idx0_max", idx0_max, 160);
     nh.param<int>("idx1_min", idx1_min, 150);
@@ -746,8 +756,8 @@ int main(int argc, char **argv)
     for (grid_map::GridMapIterator it(refinedmap); !it.isPastEnd(); ++it)
     {
         grid_map::Index idx = *it;
-        if (critical_matrix(idx(0), idx(1)) > 0 || (obstacle_matrix(idx(0), idx(1)) > 0 && idx(0) > idx0_min && idx(0) < idx0_max && idx(1) > idx1_min && idx(1) < idx1_max))
         // if (critical_matrix(idx(0), idx(1)) > 0 || (obstacle_matrix(idx(0), idx(1)) > 0))
+        if (critical_matrix(idx(0), idx(1)) > 0 && !(idx(0) > idx0_min && idx(0) < idx0_max && idx(1) > idx1_min && idx(1) < idx1_max))
         {
             obstacle_matrix(idx(0), idx(1)) = 0;
 
@@ -774,7 +784,7 @@ int main(int argc, char **argv)
                     {
                         double traversability_refined = 0.5 * roll / roll_crit + 0.5 * pitch / pitch_crit;
                         double traversability = traversability_matrix(idx(0), idx(1));
-                        traversability_refined_matrix(idx(0), idx(1)) = 0.6 * traversability_refined + 0.4 * traversability;
+                        traversability_refined_matrix(idx(0), idx(1)) = 0.4 * traversability_refined + 0.6 * traversability;
                     }
                 }
                 else if (label == 1)

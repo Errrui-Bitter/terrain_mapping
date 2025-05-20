@@ -1122,8 +1122,9 @@ void obstacle_mapping::criticalfootprintsfilter(grid_map::GridMap &map)
         //     )
         //     // traversability != 1
         //     )
-        if (traversability >= traversability_crit_fp_ && traversability <= traversability_crit_fp_up_ &&
-            step >= step_crit_fp_ && obstacle != 1)
+        // if (traversability >= traversability_crit_fp_ && traversability <= traversability_crit_fp_up_ &&
+        //     step >= step_crit_fp_ && obstacle != 1 && roughness >= roughness_crit_fp_)
+        if (slope >= slope_crit_fp_ && traversability < traversability_crit_fp_up_)
         {
             int nannum = 0;
             bool out = false;

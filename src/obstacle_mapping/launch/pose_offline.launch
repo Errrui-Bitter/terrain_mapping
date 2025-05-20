@@ -1,22 +1,22 @@
 <launch>
   <param name="position_file" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/poses/position/trench_pos.txt"/>
-  <param name="elevation_BGK_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/trench00/elevation_BGKmap.csv"/>
-  <param name="critical_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/trench00/criticalmap.csv"/>
-  <param name="traversability_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/trench00/traversabilitymap.csv"/>
-  <param name="obstacle_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/trench00/obstaclemap.csv"/>
+  <param name="elevation_BGK_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/wall00/elevation_BGKmap.csv"/>
+  <param name="critical_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/wall00/criticalmap.csv"/>
+  <param name="traversability_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/wall00/traversabilitymap.csv"/>
+  <param name="obstacle_path" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/wall00/obstaclemap.csv"/>
   <param name="save_pose" value="true"/>
   <param name="lidar_z" value="0"/>
-  <param name="terrainmap_file" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/trench00/elevation_BGKmap.csv"/>
+  <param name="terrainmap_file" value="/home/wxr/proj/traversability/obstacle_detection/ws_obdt/src/obstacle_mapping/test_map/terrain/wall00/elevation_BGKmap.csv"/>
   <param name="robot_scale" value="0.75"/>
   <param name="pred_alpha" value="0.8"/>
   <param name="vehicle_height" value="0.8"/>
   <param name="yaw" value="0"/>
-  <param name="roll_crit" value="15"/>
-  <param name="pitch_crit" value="10"/>
-  <param name="idx0_min" value="75"/>
-  <param name="idx0_max" value="160"/>
-  <param name="idx1_min" value="100"/>
-  <param name="idx1_max" value="130"/>
+  <param name="roll_crit" value="16"/>
+  <param name="pitch_crit" value="40"/>
+  <param name="idx0_min" value="135"/>
+  <param name="idx0_max" value="180"/>
+  <param name="idx1_min" value="110"/>
+  <param name="idx1_max" value="150"/>
 
   <!-- <node pkg="obstacle_mapping" type="key_pub_node" name="key_pub_node" output="screen"/> -->
   

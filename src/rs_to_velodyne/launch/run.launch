@@ -1,5 +1,6 @@
 <launch>
  <node pkg="rs_to_velodyne" name="rs_to_velodyne" type="rs_to_velodyne"  args="XYZI XYZIRT"   output="screen">
- <!-- <remap from="/rslidar_points_80" to="/lidar_cloud_calibrated"/> -->
+ <remap from="/rslidar_points_80" to="/lidar_cloud_calibrated"/>
  </node>
 </launch>
+

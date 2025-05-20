@@ -85,6 +85,9 @@ target_link_libraries(recieve_points ${catkin_LIBRARIES})
 add_executable(publish_points src/publish_points.cpp)
 target_link_libraries(publish_points ${catkin_LIBRARIES})
 
+add_executable(showpcd src/showpcd.cpp)
+target_link_libraries(showpcd ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+
 #############
 ## Install ##
 #############

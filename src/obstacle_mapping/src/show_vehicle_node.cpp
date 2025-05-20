@@ -31,7 +31,7 @@ public:
         test_pub_.publish(goal);
 
         visualization_msgs::Marker marker_6t_;
-        marker_6t_.header.frame_id = "map";
+        marker_6t_.header.frame_id = "base_link";
         marker_6t_.header.stamp = ros::Time::now();
         marker_6t_.ns = "cur";
         marker_6t_.id = 0;

@@ -6,12 +6,12 @@ running_mode: 2
 save_map: true
 
 offline:
-  pcd_path: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/0512-wall01-map.pcd
-  elevation_BGK_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/elevation_BGKmap.csv
-  critical_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/criticalmap.csv
-  traversability_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/traversabilitymap.csv
-  obstacle_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/obstaclemap.csv
-  gridmap_loadpath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0512/wall01/map/elevation_BGKmap.csv
+  pcd_path: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0509/slope04/0509slope04.pcd
+  elevation_BGK_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0509/slope04/elevation_BGKmap.csv
+  critical_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0509/slope04/criticalmap.csv
+  traversability_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0509/slope04/traversabilitymap.csv
+  obstacle_savepath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0509/slope04/obstaclemap.csv
+  gridmap_loadpath: /home/wxr/proj/traversability/obstacle_detection/ws_obdt/data/202305/0509/slope04/elevation_BGKmap.csv
 
 frame_id:
   map: "map"
@@ -20,14 +20,14 @@ frame_id:
   lidar: "velodyne"
 
 preprocess:
-  minZ_: -3.0
-  maxZ_: 2.0
+  minZ: -3.0
+  maxZ: 14.0
   lidar_Z: 0
 
 local_map:
   resolution: 0.2
-  mapLengthX: 40.0
-  mapLengthY: 60.0
+  mapLengthX: 60.0
+  mapLengthY: 140.0
 
 global_map:
   resolution: 0.2
@@ -41,20 +41,20 @@ global_map:
 
 threadCount: -1
 normal_estimationRadius: 1.0
-stepRadius: 0.5
+stepRadius: 0.3
 
-sensorRangeLimit: 40
+sensorRangeLimit: 100
 
 heightdiff_threshold: 1.4
 cntratiothreshold: 0.5
 cntthreshold: 1
-slope_crit: 0.2
-roughness_crit: 0.06
-step_crit: 0.6
+slope_crit: 0.3
+roughness_crit: 0.10
+step_crit: 0.7
 traversability_crit: 1.0
 
-slope_crit_fp: 0.8
-roughness_crit_fp: 0.5
-step_crit_fp: 0.6
-traversability_crit_fp: 0.6
-traversability_crit_fp_up: 1.0
+slope_crit_fp: 0.3
+roughness_crit_fp: 0.3
+step_crit_fp: 0.4
+traversability_crit_fp: 0.3
+traversability_crit_fp_up: 1.2

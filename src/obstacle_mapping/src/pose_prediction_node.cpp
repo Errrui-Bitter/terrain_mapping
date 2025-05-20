@@ -54,6 +54,8 @@ private:
     double center_z_ = 0.0;
     double local_min_z_;
     double lidar_z_;
+    double map_length_X_;
+    double map_length_Y_;
     int interation_;
 
     std::vector<Eigen::Vector3d> touch_points_;
@@ -117,12 +119,15 @@ pose_prediction::pose_prediction(ros::NodeHandle &nh) : nh_(nh)
     nh_.param<bool>("save_pose", save_pose_, true);
     nh_.param<double>("lidar_z", lidar_z_, 0.0);
     nh_.param<string>("terrainmap_file", TERRIANFILENAME_, ros::package::getPath("obstacle_mapping") + "/test_map/" + "elevation1.csv");
-
+    nh_.param<double>("map_length_X", map_length_X_, 30);
+    nh_.param<double>("map_length_Y", map_length_Y_, 30);
     loadCsvToMatrix(ROBOTFILENAME_, robot_gridmap_, rows_, cols_);
     setCenterXYZ(robot_gridmap_, center_x_, center_y_, center_z_);
-    loadCsvToMatrix(TERRIANFILENAME_, terrain_gridmap_HG_, 200, 300);
+    int size_X = map_length_X_ / RESOLUTION_;
+    int size_Y = map_length_Y_ / RESOLUTION_;
+    loadCsvToMatrix(TERRIANFILENAME_, terrain_gridmap_HG_, size_X, size_Y);
     setCenterXYZ(terrain_gridmap_HG_, 0, 0, -lidar_z_);
-    grid_map::Length mapLength(40.0, 60.0);
+    grid_map::Length mapLength(map_length_X_, map_length_Y_);
     terrain_gridmap_.setFrameId("map");
     terrain_gridmap_.setGeometry(mapLength, 0.2, grid_map::Position(0.0, 0.0));
     terrain_gridmap_.add("elevation", terrain_gridmap_HG_.Z_.cast<float>());

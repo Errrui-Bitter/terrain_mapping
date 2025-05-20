@@ -8,7 +8,9 @@ Panels:
         - /Status1
         - /Marker1
         - /TF1/Frames1
-        - /GridMap3
+        - /GridMap2
+        - /MarkerArray1
+        - /MarkerArray1/Namespaces1
         - /Axes1
       Splitter Ratio: 0.5
     Tree Height: 1079
@@ -60,7 +62,7 @@ Visualization Manager:
       Marker Topic: /pose_visualization
       Name: Marker
       Namespaces:
-        {}
+        touch_points: true
       Queue Size: 100
       Value: true
     - Class: rviz/TF
@@ -101,7 +103,7 @@ Visualization Manager:
       Unreliable: false
       Use Rainbow: true
       Value: true
-    - Alpha: 0.800000011920929
+    - Alpha: 0.6000000238418579
       Autocompute Intensity Bounds: false
       Class: grid_map_rviz_plugin/GridMap
       Color: 200; 200; 200
@@ -113,11 +115,11 @@ Visualization Manager:
       History Length: 1
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 3
+      Max Intensity: 11
       Min Color: 0; 0; 0
-      Min Intensity: -1.5
+      Min Intensity: -2
       Name: GridMap
-      Show Grid Lines: false
+      Show Grid Lines: true
       Topic: /terrain_map
       Unreliable: false
       Use Rainbow: true
@@ -131,13 +133,15 @@ Visualization Manager:
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
-      Enabled: false
+      Enabled: true
       Marker Topic: /visualization_marker_array
       Name: MarkerArray
       Namespaces:
-        {}
+        clicked_points: false
+        cur: true
+        pred: false
       Queue Size: 100
-      Value: false
+      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: false
       Class: grid_map_rviz_plugin/GridMap
@@ -145,12 +149,12 @@ Visualization Manager:
       Color Layer: traversability_refined
       Color Transformer: IntensityLayer
       Enabled: true
-      Height Layer: traversability_refined
+      Height Layer: elevation_BGK
       Height Transformer: Flat
       History Length: 1
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 0.7699999809265137
+      Max Intensity: 0.699999988079071
       Min Color: 0; 0; 0
       Min Intensity: 0
       Name: GridMap
@@ -162,10 +166,10 @@ Visualization Manager:
     - Alpha: 1
       Class: rviz/Axes
       Enabled: true
-      Length: 2
+      Length: 1.5
       Name: Axes
-      Radius: 0.30000001192092896
-      Reference Frame: <Fixed Frame>
+      Radius: 0.20000000298023224
+      Reference Frame: robot
       Show Trail: false
       Value: true
   Enabled: true
@@ -196,7 +200,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 52.239784240722656
+      Distance: 41.572505950927734
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -204,17 +208,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 1.6802458763122559
-        Y: 14.147439956665039
-        Z: -5.211089611053467
+        X: -2.2371559143066406
+        Y: 21.65522575378418
+        Z: 1.2123881578445435
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9947977066040039
+      Pitch: 0.39979833364486694
       Target Frame: <Fixed Frame>
-      Yaw: 5.985404014587402
+      Yaw: 3.4503824710845947
     Saved: ~
 Window Geometry:
   Displays:
@@ -232,5 +236,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 2488
-  X: 72
+  X: 2632
   Y: 27

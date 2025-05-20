@@ -108,10 +108,12 @@ void rsHandler_XYZI(sensor_msgs::PointCloud2 pc_msg)
     {
         if (has_nan(pc->points[point_id]))
             continue;
-        if (pc->points[point_id].x < 2 && pc->points[point_id].x > -2 && pc->points[point_id].y < 0.7 )
+        if (pc->points[point_id].x < 2 && pc->points[point_id].x > -2 && pc->points[point_id].y < 0.7)
             continue;
-        if (pc->points[point_id].z > 3 || pc->points[point_id].z < -4)
+        if (pc->points[point_id].z > 5 || pc->points[point_id].z < -4)
             continue;
+        // if (pc->points[point_id].y < -5)
+        //     continue;
         VelodynePointXYZIR new_point;
         new_point.x = pc->points[point_id].x;
         new_point.y = pc->points[point_id].y;

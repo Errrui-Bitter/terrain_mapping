@@ -1,5 +1,5 @@
 mapping_mode: 3
-pose_mode: 1
+pose_mode: 2
 lidar_topic: "/velodyne_points"
 odom_topic: "/liorf/mapping/odometry"
 
